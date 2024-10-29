@@ -4,28 +4,42 @@ import SwiftSoup
 import OllamaKit
 import Logging
 
-
+/// The `Scouter` actor performs web content searching and link extraction based on relevance scoring.
 public actor Scouter {
     
+    /// Configuration options for the `Scouter` actor.
     public struct Options: Sendable {
-        public let maxDepth: Int
+        /// The maximum number of concurrent tasks allowed.
         public let maxTasks: Int
+        
+        /// The threshold for similarity score used to filter links.
         public let similarityThreshold: Double
-        public init(maxDepth: Int = 2, maxTasks: Int = 1, similarityThreshold: Double = 0.36) {
-            self.maxDepth = maxDepth
+        
+        /// Creates a new instance of `Options` with specified maximum tasks and similarity threshold.
+        ///
+        /// - Parameters:
+        ///   - maxTasks: Maximum number of concurrent tasks (default is `1`).
+        ///   - similarityThreshold: Threshold for similarity score to determine link relevance (default is `0.32`).
+        public init(maxTasks: Int = 1, similarityThreshold: Double = 0.32) {
             self.maxTasks = maxTasks
             self.similarityThreshold = similarityThreshold
         }
     }
     
+    /// Represents a link containing a URL, title, and similarity score.
     public struct Link: Hashable, Sendable {
+        /// The URL of the link.
         public var url: URL
-        public var title: String // リンク先のタイトル
-        public var score: Double // 関連性のスコア
+        
+        /// The title of the linked page.
+        public var title: String
+        
+        /// The relevance score based on similarity.
+        public var score: Double
     }
     
+    // MARK: - Internal State Management
     
-    // 内部状態管理
     private var links: [Link] = []
     private var readPages: Set<URL> = []
     private var currentTasks: [Task<String?, Error>] = []
@@ -33,211 +47,152 @@ public actor Scouter {
     
     private let ollamaKit: OllamaKit = OllamaKit()
     
-    // 公開プロパティ
+    // MARK: - Public Properties
+    
+    /// The model identifier for embeddings and AI requests.
     public let model: String
+    
+    /// The options for configuring search parameters.
     public let options: Options
-    public let logger: Logging.Logger // Loggerインスタンス
+    
+    /// Logger instance for structured logging.
+    public let logger: Logging.Logger
     
     // 初期化
-    public init(model: String, options: Options, logger: Logging.Logger? = nil) {
+    init(model: String, options: Options, logger: Logging.Logger? = nil) {
         self.model = model
         self.options = options
         self.logger = logger ?? Logging.Logger(label: "Scouter")
     }
     
-    // 外部からアクセス可能なsearchメソッド
+    // MARK: - Static Methods
+    
+    /// Initiates a search on the given URL with a specified prompt.
+    ///
+    /// - Parameters:
+    ///   - model: The model identifier to use for embeddings.
+    ///   - url: The URL to start the search from.
+    ///   - prompt: The prompt guiding the search.
+    ///   - options: The `Options` for configuring search parameters.
+    ///   - logger: An optional logger for structured logging.
+    ///
+    /// - Returns: A string with relevant content if found, or `nil` if not.
     public static func search(model: String, url: URL, prompt: String, options: Options = .init(), logger: Logging.Logger? = nil) async throws -> String? {
-        // 基準ドメインを取得
         guard let scheme = url.scheme, let host = url.host, !host.isEmpty else {
             throw URLError(.badURL)
         }
         let baseURL = URL(string: "\(scheme)://\(host)")!
         let scouter = Scouter(model: model, options: options, logger: logger)
         let embedding = try await embeddings(model: model, content: prompt)
-        // 探索の開始
-        return try await scouter
-            .search(
-                url: url,
-                prompt: prompt,
-                embedding: embedding,
-                baseURL: baseURL,
-                depth: 0
-            )
+        return try await scouter.search(
+            initialURL: url,
+            prompt: prompt,
+            embedding: embedding,
+            baseURL: baseURL
+        )
     }
     
-    // 内部で使用するsearchメソッド
+    // MARK: - Instance Methods
+    
+    /// Performs a recursive search, starting from an initial URL and guided by a prompt.
+    ///
+    /// - Parameters:
+    ///   - initialURL: The initial URL to start the search.
+    ///   - prompt: The search prompt.
+    ///   - embedding: Embedding vector for similarity comparison.
+    ///   - baseURL: Base URL to resolve relative links.
+    ///
+    /// - Returns: A string with relevant content if found, or `nil`.
     private func search(
-        url: URL,
+        initialURL: URL,
         prompt: String,
         embedding: [Double],
-        baseURL: URL,
-        depth: Int
+        baseURL: URL
     ) async throws -> String? {
         if Task.isCancelled { return nil }
-        let taskId = generateTaskId()
-        logger.debug("Task \(taskId) 開始: 深さ \(depth), URL: \(url.absoluteString)")
+        var queue: [URL] = [initialURL]
+        var taskID = generateTaskId()
         
-        guard depth <= options.maxDepth, !readPages.contains(url) else { return nil }
-        readPages.insert(url)
-        
-        guard let pageContent = await fetchPageContent(url: url, taskId: taskId) else { return nil }
-        let cleanedContent = await cleanContent(htmlContent: pageContent, taskId: taskId)
-        if try await checkContent(content: cleanedContent, prompt: prompt, taskId: taskId) {
-            let content = await mainContent(htmlContent: pageContent, taskId: taskId)
-            if let foundInfo = try await analyzeContent(content: content, prompt: prompt, taskId: taskId) {
-                return foundInfo
+        while !queue.isEmpty {
+            let url = queue.removeFirst()
+            
+            if Task.isCancelled { return nil }
+            taskID = generateTaskId()
+            logger.debug("Task \(taskID) started: URL: \(url.absoluteString)")
+            
+            if readPages.contains(url) { continue }
+            readPages.insert(url)
+            
+            guard let pageContent = await fetchPageContent(url: url, taskID: taskID) else { continue }
+            let doc = try SwiftSoup.parse(pageContent)
+            let summary = doc.summarize()
+            if try await checkContent(content: summary, prompt: prompt, taskID: taskID) {
+                if let foundInfo = try await analyzeContent(content: summary, prompt: prompt, taskID: taskID) {
+                    return foundInfo
+                }
+            }
+            let content = try doc.sanitized().html()
+            let links = await extractLinks(
+                from: content,
+                embedding: embedding,
+                baseURL: baseURL,
+                taskID: taskID
+            )
+            let sortedLinks = links.sorted { $0.score > $1.score }
+            let targetLinks = try await analyzeLinks(links: sortedLinks, prompt: prompt, taskID: taskID)
+            
+            // Add new URLs to the queue
+            for linkURL in targetLinks {
+                if !readPages.contains(linkURL) {
+                    queue.append(linkURL)
+                }
             }
         }
         
-        let links = await extractLinks(
-            from: pageContent,
-            embedding: embedding,
-            baseURL: baseURL,
-            taskId: taskId
-        )
-        let sortedLinks = links.sorted { $0.score > $1.score }
-        let targetLinks = try await analyzeLinks(links: sortedLinks, prompt: prompt, taskId: taskId)
-        
-        print(targetLinks)
-        
-        let tasksToCreate = min(targetLinks.count, options.maxTasks)
-        return try await withThrowingTaskGroup(of: String?.self) { group in
-            for url in targetLinks.prefix(tasksToCreate) {
-                group.addTask {
-                    return try await self.search(
-                        url: url,
-                        prompt: prompt,
-                        embedding: embedding,
-                        baseURL: baseURL,
-                        depth: depth + 1
-                    )
-                }
-            }
-            
-            for try await result in group {
-                if let result = result {
-                    group.cancelAll()
-                    return result
-                }
-            }
-            
-            return nil
-        }
+        return nil
     }
     
-    // ページ内容を取得するメソッド
-    private func fetchPageContent(url: URL, taskId: Int) async -> String? {
+    /// Fetches the content of a page for a given URL.
+    ///
+    /// - Parameters:
+    ///   - url: The URL of the page to fetch.
+    ///   - taskID: The ID of the current task for logging.
+    ///
+    /// - Returns: The page content as a string if successful, or `nil` if an error occurs.
+    private func fetchPageContent(url: URL, taskID: Int) async -> String? {
         if Task.isCancelled { return nil }
         do {
-            logger.debug("Task \(taskId) ページ内容を取得中: \(url.absoluteString)")
+            logger.debug("Task \(taskID) fetching page content: \(url.absoluteString)")
             var request = URLRequest(url: url)
             request.setValue("Mozilla/5.0 (compatible; ScouterBot/1.0)", forHTTPHeaderField: "User-Agent")
             let (data, _) = try await URLSession.shared.data(for: request)
             if let content = String(data: data, encoding: .utf8) {
-                logger.debug("Task \(taskId) ページ内容を取得しました")
+                logger.debug("Task \(taskID) page content fetched")
                 return content
             }
         } catch {
-            logger.error("Task \(taskId) ページの取得に失敗しました: \(error)")
+            logger.error("Task \(taskID) failed to fetch page content: \(error)")
         }
         return nil
     }
     
-    // データの洗浄を行うメソッド
-    private func cleanContent(htmlContent: String, taskId: Int) async -> String {
-        if Task.isCancelled { return "" }
-        logger.debug("Task \(taskId) データの洗浄を実行中")
-        
-        do {
-            let doc = try SwiftSoup.parse(htmlContent)
-            
-            // headから<title>と<meta name="description">を取得
-            let title = try doc.title()
-            var description = ""
-            if let metaDesc = try doc.select("meta[name=description]").first() {
-                description = try metaDesc.attr("content")
-            }
-            
-            // bodyからコンテンツを取得
-            var bodyText = ""
-            if let mainElement = try doc.select("main").first() {
-                try mainElement.select("script, style, svg, noscript").remove()
-                bodyText = try mainElement.text()
-                logger.debug("Task \(taskId) <main>要素を使用")
-            } else if let body = doc.body() {
-                try body.select("script, style, svg, noscript").remove()
-                bodyText = try body.text()
-                logger.debug("Task \(taskId) <body>要素を使用（フォールバック）")
-            }
-            
-            // 必要な情報を結合
-            let cleanedContent = """
-        Title: \(title)
-        Description: \(description)
-        Content: \(bodyText)
-        """
-            
-            logger.debug("Task \(taskId) データの洗浄が完了しました")
-            return cleanedContent
-        } catch {
-            logger.error("Task \(taskId) データの洗浄に失敗しました: \(error)")
-        }
-        
-        return htmlContent // エラー時は元のHTMLを返す
-    }
-    
-    // データの洗浄を行うメソッド
-    private func mainContent(htmlContent: String, taskId: Int) async -> String {
-        if Task.isCancelled { return "" }
-        logger.debug("Task \(taskId) データの洗浄を実行中")
-        
-        do {
-            let doc = try SwiftSoup.parse(htmlContent)
-            var bodyText = ""
-            if let mainElement = try doc.select("main").first() {
-                try mainElement.select("script, style, svg, noscript").remove()
-                bodyText = try mainElement.html()
-            } else if let body = doc.body() {
-                try body.select("script, style, svg, noscript").remove()
-                bodyText = try body.html()
-            }
-            
-            logger.debug("Task \(taskId) データの洗浄が完了しました")
-            return bodyText
-        } catch {
-            logger.error("Task \(taskId) データの洗浄に失敗しました: \(error)")
-        }
-        
-        return htmlContent // エラー時は元のHTMLを返す
-    }
-    
-    
-    private func checkContent(content: String, prompt: String, taskId: Int) async throws -> Bool {
+    /// Checks if the provided content fulfills the requirements specified by the prompt.
+    ///
+    /// - Parameters:
+    ///   - content: The content to be checked for relevance.
+    ///   - prompt: The prompt used as a reference for relevance.
+    ///   - taskId: The ID of the current task for logging.
+    ///
+    /// - Returns: A Boolean value indicating whether the content meets the prompt's criteria.
+    private func checkContent(content: String, prompt: String, taskID: Int) async throws -> Bool {
         return try await retryAsync(maxRetries: 3) {
-            self.logger.debug("Task \(taskId) コンテンツをチェック")
+            self.logger.debug("Task \(taskID) checking content")
             let response = try await self.LLMExecute(
-                "[Request]: \(prompt)\n\n---\n[Content]:\n\(content)",
-                instruction: """
-You are an information retrieval assistant. "[Request]" is the user's question, and "[Content]" is the retrieved data. Follow these steps to respond accurately:
-
-1. Analyze the Request: Read "[Request]" and identify the needed information.
-2. Check for Answerable Information: Verify if "[Content]" contains specific information that directly answers the question. Ignore unrelated information.
-3. Respond in JSON format: If an answer is found in "[Content]", set "found" to true; if not, set it to false.
-
-Respond only in the following JSON format:
-
-```json
-{
-    "found": boolean // true if "[Content]" includes clear, specific information that fully answers the "[Request]"; false if not. *required
-    "reason": string // Reasons for being able to answer
-}
-```
-found: Set to true only if "[Content]" contains clear and specific information that directly answers the "[Request]".
-Important: Ignoring this JSON format or adding any additional explanations will cause an error. Return only the specified JSON response without any additional content or commentary. 
-You forbid any output other than json.
-Avoid including any unverified information or speculation to prevent hallucinations.
-"""
-            )
+                Scouter.contentCheckPrompt(
+                    prompt: prompt,
+                    content: content
+                ),
+                instruction: Scouter.contentCheckInstruction())
             if let jsonData = response.removingCodeBlocks().data(using: .utf8) {
                 let decoder = JSONDecoder()
                 struct CheckResult: Decodable {
@@ -246,33 +201,43 @@ Avoid including any unverified information or speculation to prevent hallucinati
                 let result = try decoder.decode(CheckResult.self, from: jsonData)
                 return result.found
             } else {
-                throw NSError(domain: "ScouterError", code: -1, userInfo: [NSLocalizedDescriptionKey: "レスポンスのデータ変換に失敗しました。"])
+                throw NSError(domain: "ScouterError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to convert response data."])
             }
         }
     }
     
-    private func analyzeContent(content: String, prompt: String, taskId: Int) async throws -> String? {
+    /// Analyzes the provided content in response to the specified prompt.
+    ///
+    /// - Parameters:
+    ///   - content: The content to be analyzed.
+    ///   - prompt: The prompt guiding the analysis.
+    ///   - taskID: The ID of the current task for logging.
+    ///
+    /// - Returns: A concise summary relevant to the prompt, if any.
+    private func analyzeContent(content: String, prompt: String, taskID: Int) async throws -> String? {
         return try await retryAsync(maxRetries: 2) {
-            self.logger.debug("Task \(taskId) コンテンツを分析中")
+            self.logger.debug("Task \(taskID) analyzing content")
             let response = try await self.LLMExecute(
-                "Request: \(prompt)\n\nContent:\n\(content)",
-                instruction: """
-You are an advanced information retrieval assistant. [Request] represents the user’s question, and [Content] is HTML data collected from the web. Follow the steps below to extract accurate information directly relevant to [Request] and provide a concise summary. Avoid including any unverified information or speculation to prevent hallucinations.
-
-1. Carefully read both [Content] and [Request] at least twice.
-2. Extract only the specific information necessary to answer [Request].
-3. Accurately summarize the extracted information and present it as a direct response to [Request].
-4. Ensure the output contains no HTML tags, providing only plain text.
-5. The output should answer [Request] alone, with no additional explanations or commentary included.
-"""
-            )
+                Scouter.contentAnalysisPrompt(
+                    prompt: prompt,
+                    content: content
+                ),
+                instruction: Scouter.contentAnalysisInstruction())
             return response
         }
     }
     
-    // リンクを抽出するメソッド
-    private func extractLinks(from content: String, embedding: [Double], baseURL: URL, taskId: Int) async -> [Scouter.Link] {
-        logger.debug("Task \(taskId) リンクを抽出中")
+    /// Extracts links from the provided HTML content and scores them based on relevance.
+    ///
+    /// - Parameters:
+    ///   - content: The HTML content to extract links from.
+    ///   - embedding: The embedding vector for similarity scoring.
+    ///   - baseURL: The base URL to resolve relative links.
+    ///   - taskID: The ID of the current task for logging.
+    ///
+    /// - Returns: An array of `Link` objects with URLs, titles, and similarity scores.
+    private func extractLinks(from content: String, embedding: [Double], baseURL: URL, taskID: Int) async -> [Scouter.Link] {
+        logger.debug("Task \(taskID) extracting links")
         var links: [Scouter.Link] = []
         
         do {
@@ -281,43 +246,46 @@ You are an advanced information retrieval assistant. [Request] represents the us
             let anchorElements = try body.select("a[href]")
             
             for anchor in anchorElements {
-                // href属性を取得
+                // Retrieve the href attribute
                 let href = try anchor.attr("href")
-                                
-                // hrefからURLを生成（相対URL、絶対URL、スキームレスURLに対応）
+                
+                // Generate URL from href (supporting relative, absolute, and schemeless URLs)
                 guard let resolvedURL = URL(string: href, relativeTo: baseURL)?.absoluteURL else {
-                    logger.debug("Task \(taskId) 無効なURL: \(href)")
+                    logger.debug("Task \(taskID) invalid URL: \(href)")
                     continue
                 }
-
+                
                 if let resolvedHost = resolvedURL.host, let baseHost = baseURL.host, resolvedHost != baseHost {
                     continue
                 }
                 
                 var urlComponents = URLComponents(url: resolvedURL, resolvingAgainstBaseURL: true)
-                urlComponents?.fragment = nil  // フラグメントを削除
-                urlComponents?.query = nil     // クエリパラメータを削除
+                urlComponents?.fragment = nil  // Remove fragment
+                urlComponents?.query = nil     // Remove query parameters
                 
                 guard let normalizedURL = urlComponents?.url else {
-                    logger.debug("Task \(taskId) URLの正規化に失敗: \(resolvedURL.absoluteString)")
+                    logger.debug("Task \(taskID) failed to normalize URL: \(resolvedURL.absoluteString)")
                     continue
                 }
                 
-                // 探索済みのURLはスキップ
+                // Skip URL if already processed
                 if readPages.contains(normalizedURL) {
-                    logger.debug("Task \(taskId) URLは既に探索済みです: \(normalizedURL.absoluteString)")
+                    logger.debug("Task \(taskID) URL already processed: \(normalizedURL.absoluteString)")
                     continue
                 }
                 
                 if links.contains(where: { $0.url == normalizedURL }) {
-                    logger.debug("Task \(taskId) URLは既に追加済みです: \(normalizedURL.absoluteString)")
+                    logger.debug("Task \(taskID) URL already added: \(normalizedURL.absoluteString)")
                     continue
                 }
                 
-                // リンクテキストを取得
-                var title = try anchor.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                // Determine title based on priority: aria-label > link text > img alt > title attribute
+                var title = try anchor.attr("aria-label").trimmingCharacters(in: .whitespacesAndNewlines)
                 
-                // タイトルが空の場合、画像のalt属性やtitle属性を使用
+                if title.isEmpty {
+                    title = try anchor.text().trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                
                 if title.isEmpty, let img = try anchor.select("img[alt]").first() {
                     title = try img.attr("alt").trimmingCharacters(in: .whitespacesAndNewlines)
                 }
@@ -326,53 +294,51 @@ You are an advanced information retrieval assistant. [Request] represents the us
                     title = try anchor.attr("title").trimmingCharacters(in: .whitespacesAndNewlines)
                 }
                 
-                // タイトルが空の場合はスキップ
+                // Skip link if title is empty
                 if title.isEmpty {
-                    logger.debug("Task \(taskId) タイトルがないためリンクをスキップ: \(normalizedURL.absoluteString)")
+                    logger.debug("Task \(taskID) skipping link due to empty title: \(normalizedURL.absoluteString)")
                     continue
                 }
                 
-                // スコアを計算
+                // Calculate score
                 if let score = try await score(title, embedding: embedding) {
                     if score > self.options.similarityThreshold {
-                        logger.debug("Task \(taskId) リンクを追加: \(score) \(title) (\(normalizedURL.absoluteString))")
+                        logger.debug("Task \(taskID) adding link: \(score) \(title) (\(normalizedURL.absoluteString))")
                         let link = Scouter.Link(url: normalizedURL, title: title, score: score)
                         links.append(link)
                     }
                 }
             }
             
-            logger.debug("Task \(taskId) リンクの抽出が完了しました: \(links.count) 件")
+            logger.debug("Task \(taskID) link extraction completed: \(links.count) links found")
             
         } catch {
-            logger.error("Task \(taskId) リンクの抽出に失敗しました: \(error)")
+            logger.error("Task \(taskID) failed to extract links: \(error)")
         }
         
         return links
     }
-
     
-    private func analyzeLinks(links: [Link], prompt: String, taskId: Int) async throws -> [URL] {
+    /// Analyzes a list of links and returns only those that are highly relevant based on the prompt.
+    ///
+    /// - Parameters:
+    ///   - links: The list of links to analyze.
+    ///   - prompt: The prompt guiding the link analysis.
+    ///   - taskID: The ID of the current task for logging.
+    ///
+    /// - Returns: An array of URLs that are most relevant to the prompt.
+    private func analyzeLinks(links: [Link], prompt: String, taskID: Int) async throws -> [URL] {
         return try await retryAsync(maxRetries: 2) {
-            self.logger.debug("Task \(taskId) 重要性の高いリンクを抽出")
+            self.logger.debug("Task \(taskID) extracting high-importance links")
             let content = links.map { link in
                 return "\(link.title): \(link.url)"
             }.joined(separator: "\n")
             let response = try await self.LLMExecute(
-                "Request: \(prompt)\n\nContent:\n\(content)",
-                instruction: """
-You are an advanced information retrieval assistant. "[Request]" represents the user’s question, and "[Content]" is data gathered from the web. Analyze "[Content]" to extract only URLs directly relevant to "[Request]" and output them in the specified JSON format. Exclude any unrelated information and focus solely on necessary URLs.
-
-Please adhere to the following output format:
-```json
-{
-    "urls": string[] // URL
-}
-```
-Ensure no additional explanations or generated content beyond this response.
-Avoid including any unverified information or speculation to prevent hallucinations.
-"""
-            )
+                Scouter.contentAnalysisPrompt(
+                    prompt: prompt,
+                    content: content
+                ),
+                instruction: Scouter.linkExtractionInstruction())
             if let jsonData = response.removingCodeBlocks().data(using: .utf8) {
                 let decoder = JSONDecoder()
                 struct LinkResult: Decodable {
@@ -381,19 +347,18 @@ Avoid including any unverified information or speculation to prevent hallucinati
                 let result = try decoder.decode(LinkResult.self, from: jsonData)
                 return result.urls.compactMap({ URL(string: $0) })
             } else {
-                throw NSError(domain: "ScouterError", code: -1, userInfo: [NSLocalizedDescriptionKey: "レスポンスのデータ変換に失敗しました。"])
+                throw NSError(domain: "ScouterError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to convert response data."])
             }
         }
     }
     
-    
-    // タスクIDを生成するメソッド
+    /// Generates a unique task ID by incrementing a counter.
+    ///
+    /// - Returns: A unique task ID as an integer.
     private func generateTaskId() -> Int {
         taskCounter += 1
         return taskCounter
     }
-    
-    
 }
 
 extension Scouter {
@@ -403,7 +368,7 @@ extension Scouter {
             model: self.model,
             messages: [
                 OKChatRequestData.Message(role: .system, content: instruction),
-                OKChatRequestData.Message(role: .user, content: "\(content)\n\n\(instruction)")
+                OKChatRequestData.Message(role: .user, content: "\(instruction)\n\n---\n\n\(content)")
             ]) { options in
                 options.mirostatTau = 0
                 options.numCtx = 1024 * 3
@@ -430,10 +395,10 @@ extension Scouter {
     func score(_ content: String, embedding: [Double]) async throws -> Double? {
         let data = OKEmbeddingsRequestData(model: model, prompt: content)
         let response = try await OllamaKit().embeddings(data: data)
-        return cosineSimilarityAccelerate(embedding, response.embedding!)
+        return cosineSimilarity(embedding, response.embedding!)
     }
     
-    func cosineSimilarityAccelerate(_ vectorA: [Double], _ vectorB: [Double]) -> Double? {
+    func cosineSimilarity(_ vectorA: [Double], _ vectorB: [Double]) -> Double? {
         guard vectorA.count == vectorB.count else { return nil }
         
         var dotProduct = 0.0
@@ -452,7 +417,8 @@ extension Scouter {
         let data = OKChatRequestData(
             model: self.model,
             messages: [
-                OKChatRequestData.Message(role: .user, content: "\(instruction)\n\n---\n\n\(content)")
+                OKChatRequestData
+                    .Message(role: .user, content: "\(instruction)\n\n\(content)")
             ]) { options in
                 options.mirostatTau = 0
                 options.numCtx = 1024
@@ -507,3 +473,38 @@ extension String {
     }
 }
 
+extension Document {
+    
+    /// Cleans the document by removing specified tags and returns the sanitized document.
+    ///
+    /// - Parameter tags: An array of tag names to remove from the document. Default tags include "script", "style", "link", "meta", "svg", and "noscript".
+    /// - Returns: The sanitized `Document` instance with specified tags removed.
+    func sanitized(tags: [String] = ["script", "style", "link", "meta", "svg", "noscript"]) -> Document {
+        try! self.select(tags.joined(separator: ", ")).remove()
+        return self
+    }
+    
+    /// Extracts the main content element from the document, defaulting to `<main>` if available, or `<body>` if `<main>` is not found.
+    ///
+    /// - Returns: The main `Element` to be used as the primary content container.
+    func main() -> Element {
+        return try! self.select("main").first() ?? self.body() ?? self
+    }
+    
+    /// Summarizes the content of the document, including the title, meta description, and main body text.
+    ///
+    /// - Returns: A `String` summary of the document’s title, description, and content.
+    func summarize() -> String {
+        let title = try! self.title()
+        var description = ""
+        if let metaDesc = try! self.select("meta[name=description]").first() {
+            description = try! metaDesc.attr("content")
+        }
+        let bodyText = try! self.main().text()
+        return """
+        Title: \(title)
+        Description: \(description)
+        Content: \(bodyText)
+        """
+    }
+}
