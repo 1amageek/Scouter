@@ -19,6 +19,7 @@ public actor ScouterCrawlerDelegate: CrawlerDelegate {
     private let options: Scouter.Options
     private let logger: Logger?
     private var pagesToVisit: Set<PageToVisit> = []
+    private var evaluatedLinks: Set<EvaluatedLink> = []
     private var visitedPages: [VisitedPage] = []
     private var answer: Scouter.Answer?
     private let ollamaKit: OllamaKit
@@ -245,8 +246,35 @@ public actor ScouterCrawlerDelegate: CrawlerDelegate {
                 "linkCount": .string("\(links.count)")
             ])
             
+            let unevaluatedLinks = links.filter { link in
+                !evaluatedLinks.contains(where: { $0.url == link.url }) &&
+                !pagesToVisit.contains(where: { $0.url == link.url }) &&
+                !visitedPages.contains(where: { $0.url == link.url })
+            }
+            
+            guard !unevaluatedLinks.isEmpty else {
+                logger?.debug("ScouterCrawlerDelegate: All links already evaluated", metadata: [
+                    "source": .string("ScouterCrawlerDelegate.didFindLinks"),
+                    "url": .string(url.absoluteString)
+                ])
+                return
+            }
+            
             // First pass: Calculate embeddings and filter by similarity
-            let highSimilarityLinks: Set<LinkWithSimilarity> = await filterLinksBySimilarity(links)
+            let linkWithSimilarities: Set<LinkWithSimilarity> = await getLinkWithSimilarities(unevaluatedLinks)
+            let highSimilarityLinks: Set<LinkWithSimilarity> = linkWithSimilarities
+                .filter({ $0.similarity >= options.similarityThreshold })
+            
+            linkWithSimilarities.forEach { link in
+                evaluatedLinks
+                    .insert(
+                        .init(
+                            url: link.link.url,
+                            title: link.link.title,
+                            similarity: link.similarity
+                        )
+                    )
+            }
             
             guard !highSimilarityLinks.isEmpty else {
                 logger?.debug("ScouterCrawlerDelegate: No high similarity links found", metadata: [
@@ -256,11 +284,11 @@ public actor ScouterCrawlerDelegate: CrawlerDelegate {
                 return
             }
             
-            // Second pass: Evaluate filtered links using LLM
-            let evaluations = try await linkEvaluator.evaluate(
-                links: Set(highSimilarityLinks.map { $0.link }),
+            // Second pass: Evaluate filtered links in chunks
+            let evaluations = try await evaluateLinksInChunks(
+                highSimilarityLinks: highSimilarityLinks,
                 query: query.prompt,
-                currentUrl: url
+                url: url
             )
             
             evaluations.forEach { link in
@@ -286,14 +314,16 @@ public actor ScouterCrawlerDelegate: CrawlerDelegate {
                     similarity: linkWithSimilarity.similarity
                 )
                 
-                pagesToVisit.insert(pageToVisit)
-                logger?.debug("ScouterCrawlerDelegate: Added page to visit queue", metadata: [
-                    "source": .string("ScouterCrawlerDelegate.didFindLinks"),
-                    "url": .string(evaluation.url.absoluteString),
-                    "priority": .string("\(evaluation.priority)"),
-                    "similarity": .string(String(format: "%.4f", linkWithSimilarity.similarity)),
-                    "title": .string(evaluation.title)
-                ])
+                if pageToVisit.priority >= .medium {
+                    pagesToVisit.insert(pageToVisit)
+                    logger?.debug("ScouterCrawlerDelegate: Added page to visit queue", metadata: [
+                        "source": .string("ScouterCrawlerDelegate.didFindLinks"),
+                        "url": .string(evaluation.url.absoluteString),
+                        "priority": .string("\(evaluation.priority)"),
+                        "similarity": .string(String(format: "%.4f", linkWithSimilarity.similarity)),
+                        "title": .string(evaluation.title)
+                    ])
+                }
             }
             
         } catch {
@@ -305,24 +335,62 @@ public actor ScouterCrawlerDelegate: CrawlerDelegate {
         }
     }
     
+    private func evaluateLinksInChunks(
+        highSimilarityLinks: Set<LinkWithSimilarity>,
+        query: String,
+        url: URL
+    ) async throws -> [LinkEvaluation] {
+        var allEvaluations: [LinkEvaluation] = []
+        let links = Array(highSimilarityLinks)
+        
+        // Process links in chunks
+        for chunk in links.chunks(of: options.evaluateLinksChunkSize) {
+            let chunkLinks = Set(chunk.map { $0.link })
+            
+            logger?.debug("Processing link evaluation chunk", metadata: [
+                "source": .string("ScouterCrawlerDelegate.evaluateLinksInChunks"),
+                "chunkSize": .string("\(chunkLinks.count)"),
+                "totalProcessed": .string("\(allEvaluations.count)"),
+                "remainingChunks": .string("\((links.count - allEvaluations.count) / options.evaluateLinksChunkSize)")
+            ])
+            
+            do {
+                let chunkEvaluations = try await linkEvaluator.evaluate(
+                    links: chunkLinks,
+                    query: query,
+                    currentUrl: url
+                )
+                
+                allEvaluations.append(contentsOf: chunkEvaluations)
+            } catch {
+                logger?.error("Error evaluating link chunk", metadata: [
+                    "error": .string(error.localizedDescription),
+                    "chunkSize": .string("\(chunkLinks.count)")
+                ])
+                // Continue processing remaining chunks even if one fails
+                continue
+            }
+        }
+        
+        return allEvaluations
+    }
+    
     // Helper struct to keep link and its similarity score together
     private struct LinkWithSimilarity: Hashable {
         let link: Crawler.Link
         let similarity: Float
     }
     
-    private func filterLinksBySimilarity(_ links: Set<Crawler.Link>) async -> Set<LinkWithSimilarity> {
-        var highSimilarityLinks: Set<LinkWithSimilarity> = []
+    private func getLinkWithSimilarities(_ links: Set<Crawler.Link>) async -> Set<LinkWithSimilarity> {
+        var linkWithSimilarities: Set<LinkWithSimilarity> = []
         
         for link in links {
             // Skip if already visited or queued
             guard !visitedPages.contains(where: { $0.url == link.url }) else { continue }
             guard !pagesToVisit.contains(where: { $0.url == link.url }) else { continue }
             
-            if let similarity = await calculateSimilarity(text: link.title),
-               similarity >= options.similarityThreshold {
-                highSimilarityLinks.insert(LinkWithSimilarity(link: link, similarity: similarity))
-                
+            if let similarity = await calculateSimilarity(text: link.title) {
+                linkWithSimilarities.insert(LinkWithSimilarity(link: link, similarity: similarity))
                 logger?.debug("ScouterCrawlerDelegate: Link similarity calculated", metadata: [
                     "source": .string("ScouterCrawlerDelegate.filterLinksBySimilarity"),
                     "url": .string(link.url.absoluteString),
@@ -332,7 +400,7 @@ public actor ScouterCrawlerDelegate: CrawlerDelegate {
             }
         }
         
-        return highSimilarityLinks
+        return linkWithSimilarities
     }
     
     public func crawler(_ crawler: Crawler, didVisit url: URL) async {
@@ -357,18 +425,39 @@ public actor ScouterCrawlerDelegate: CrawlerDelegate {
     }
     
     public func crawler(_ crawler: Crawler, didSkip url: URL, reason: Crawler.SkipReason) async {
+        // Remove skipped URL from pagesToVisit if present
+        if let pageToVisit = pagesToVisit.first(where: { $0.url == url }) {
+            pagesToVisit.remove(pageToVisit)
+            
+            logger?.debug("ScouterCrawlerDelegate: Removed skipped URL from visit queue", metadata: [
+                "source": .string("ScouterCrawlerDelegate.didSkip"),
+                "url": .string(url.absoluteString),
+                "reason": .string("\(reason)")
+            ])
+        }
+        
+        // Add to evaluated links to prevent re-evaluation
+        if !evaluatedLinks.contains(where: { $0.url == url }) {
+            let evaluatedLink = EvaluatedLink(
+                url: url,
+                title: "", // Empty title for skipped links
+                similarity: 0, // Zero similarity for skipped links
+                evaluation: nil, // No evaluation for skipped links
+                evaluatedAt: Date()
+            )
+            evaluatedLinks.insert(evaluatedLink)
+            logger?.debug("ScouterCrawlerDelegate: Added skipped URL to evaluated links", metadata: [
+                "source": .string("ScouterCrawlerDelegate.didSkip"),
+                "url": .string(url.absoluteString)
+            ])
+        }
+        
         logger?.debug("ScouterCrawlerDelegate: Skipped URL", metadata: [
             "source": .string("ScouterCrawlerDelegate.didSkip"),
             "url": .string(url.absoluteString),
-            "reason": .string("\(reason)")
-        ])
-    }
-    
-    public func crawlerDidFinish(_ crawler: Crawler) {
-        logger?.info("ScouterCrawlerDelegate: Crawling finished", metadata: [
-            "source": .string("ScouterCrawlerDelegate.crawlerDidFinish"),
-            "visitedPages": .string("\(visitedPages.count)"),
-            "remainingPages": .string("\(pagesToVisit.count)")
+            "reason": .string("\(reason)"),
+            "remainingToVisit": .string("\(pagesToVisit.count)"),
+            "evaluatedLinks": .string("\(evaluatedLinks.count)")
         ])
     }
     
@@ -679,6 +768,48 @@ extension ScouterCrawlerDelegate {
     }
 }
 
+extension ScouterCrawlerDelegate {
+    /// Represents a link that has been evaluated for crawling
+    private struct EvaluatedLink: Hashable {
+        /// Basic link information
+        let url: URL
+        let title: String
+        
+        /// Similarity score from embedding comparison
+        let similarity: Float
+        
+        /// LLM evaluation result (exists only if similarity exceeds threshold)
+        let evaluation: LinkEvaluation?
+        
+        /// Timestamp when evaluation was performed
+        let evaluatedAt: Date
+        
+        init(
+            url: URL,
+            title: String,
+            similarity: Float,
+            evaluation: LinkEvaluation? = nil,
+            evaluatedAt: Date = Date()
+        ) {
+            self.url = url
+            self.title = title
+            self.similarity = similarity
+            self.evaluation = evaluation
+            self.evaluatedAt = evaluatedAt
+        }
+        
+        // Equality comparison based on URL only
+        static func == (lhs: EvaluatedLink, rhs: EvaluatedLink) -> Bool {
+            return lhs.url == rhs.url
+        }
+        
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(url)
+        }
+    }
+
+}
+
 // MARK: - Supporting Types
 
 private struct AnswerResponse: Codable {
@@ -691,5 +822,14 @@ private struct AnswerResponse: Codable {
         let title: String
         let relevance: Float
         let snippet: String
+    }
+}
+
+// Extension to support chunking arrays
+extension Array {
+    func chunks(of size: Int) -> [[Element]] {
+        stride(from: 0, to: count, by: size).map {
+            Array(self[$0 ..< Swift.min($0 + size, count)])
+        }
     }
 }
