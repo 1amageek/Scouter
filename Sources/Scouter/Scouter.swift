@@ -150,28 +150,52 @@ public struct Scouter: Sendable {
         model: String
     ) async throws -> String {
         let prompt = """
-        Based on the following aspects of the query, generate an ideal answer template.
-        Use [TBD] as a placeholder for specific information that needs to be found.
+        Create a pure answer template. Create placeholders for ALL information, regardless of whether you know it or not.
         
-        Query: \(analysis.query)
+        1. Identify the language of the query
+        2. Create a pure answer template with these requirements:
+        - Use [TBD] for any specific information, facts, numbers, or references
+        - Use exactly the same language as identified
+        - Focus only on creating a structured template
         
-        Critical Aspects:
+        Query: 
+        \(analysis.query)
+        
+        Critical Aspects to Cover:
         \(analysis.criticalAspects.map { "- \($0.description) (Importance: \($0.importance))" }.joined(separator: "\n"))
         
-        Required Knowledge Areas:
+        Knowledge Areas Required:
         \(Set(analysis.aspects.flatMap { $0.requiredKnowledge }).joined(separator: ", "))
         
         Expected Information Types:
         \(Set(analysis.aspects.flatMap { $0.expectedInfoTypes }).joined(separator: ", "))
         
-        Generate a structured answer template that covers all critical aspects:
+        [Template]:
         """
         
         let data = OKChatRequestData(
             model: model,
             messages: [
-                OKChatRequestData.Message(role: .system, content: "You are a template generator for web search answers."),
-                OKChatRequestData.Message(role: .user, content: prompt)
+                .system(
+                    """
+                    You are a specialized template architect focused on creating clear, well-structured answer templates.
+                    Your key responsibilities:
+                        1. Match the language and formality of the query precisely
+                    2. Create comprehensive yet clear templates
+                    3. Use appropriate placeholders for missing information
+                    4. Maintain polite and professional tone
+                    5. Ensure logical flow between sections
+                    6. Make complex topics accessible while maintaining accuracy
+                    
+                    Important guidelines:
+                        - Structure responses with clear sections
+                    - Use consistent formatting throughout
+                    - Be explicit about required information
+                    - Maintain appropriate formality level
+                    - Ensure cultural appropriateness
+                    """
+                ),
+                .user(prompt)
             ]
         ) { options in
             options.temperature = 0.3
