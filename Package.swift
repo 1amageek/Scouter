@@ -12,6 +12,9 @@ let package = Package(
             targets: ["Scouter"]),
     ],
     dependencies: [
+        .package(url: "https://github.com/1amageek/Selenops.git", branch: "main"),
+        .package(url: "https://github.com/1amageek/AspectAnalyzer.git", branch: "main"),
+        .package(url: "https://github.com/1amageek/Remark.git", branch: "main"),
         .package(url: "https://github.com/1amageek/OllamaKit.git", branch: "main"),
         .package(url: "https://github.com/apple/swift-log.git", branch: "main"),
         .package(url: "https://github.com/scinfu/SwiftSoup.git", branch: "master")
@@ -20,8 +23,11 @@ let package = Package(
         .target(
             name: "Scouter",
             dependencies: [
-                "SwiftSoup",
+                "Selenops",
+                "AspectAnalyzer",
+                "Remark",
                 "OllamaKit",
+                "SwiftSoup",
                 .product(name: "Logging", package: "swift-log")
             ]
         ),
