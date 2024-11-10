@@ -1,13 +1,49 @@
 {
-  "originHash" : "ab1aa474ca6016fae3071a24ed46d90d9ae4dbbb2adce2b43815fb603e02e7df",
+  "originHash" : "ba8eddf4a2ff40e3477c3ac44577e364114539427e563625eda1c07c718031f1",
   "pins" : [
+    {
+      "identity" : "aspectanalyzer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/AspectAnalyzer.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "60ba519628cdd7657e15dd64d148ff22e6b9b76e"
+      }
+    },
     {
       "identity" : "ollamakit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/1amageek/OllamaKit.git",
       "state" : {
         "branch" : "main",
-        "revision" : "a2c146c13a6b5e518efbd5993ab3c251cbffe9b7"
+        "revision" : "f021e813b9d3368ecfae01d082372b4bc86029e2"
+      }
+    },
+    {
+      "identity" : "remark",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/Remark.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "776b059633504138c79e96d3240acb6a5de1f609"
+      }
+    },
+    {
+      "identity" : "selenops",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/Selenops.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "425cfeea97ad2bd6f433e6b87a67871376effda8"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "e4009c1616ef861459fe56e05b579e29942fc3d3"
       }
     },
     {
