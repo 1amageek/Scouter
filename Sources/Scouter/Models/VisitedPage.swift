@@ -7,13 +7,13 @@
 
 import Foundation
 
-public struct VisitedPage: Identifiable, Sendable {
+public struct VisitedPage: Identifiable, Sendable, CustomStringConvertible {
     public let id: UUID
     public let url: URL
     public let title: String
     public let content: String
     public let embedding: [Float]
-    public let similarity: Float
+    public let score: Float
     public let visitedAt: Date
     public let summary: String?
     public let isRelevant: Bool
@@ -25,7 +25,7 @@ public struct VisitedPage: Identifiable, Sendable {
         title: String,
         content: String,
         embedding: [Float],
-        similarity: Float,
+        score: Float,
         visitedAt: Date = Date(),
         summary: String? = nil,
         isRelevant: Bool = false,
@@ -36,10 +36,25 @@ public struct VisitedPage: Identifiable, Sendable {
         self.title = title
         self.content = content
         self.embedding = embedding
-        self.similarity = similarity
+        self.score = score
         self.visitedAt = visitedAt
         self.summary = summary
         self.isRelevant = isRelevant
         self.metadata = metadata
+    }
+}
+
+extension VisitedPage {
+    
+    public var description: String {
+        return """
+        Visited Page:
+          id: "\(id)"
+          url: "\(url)"
+          title: "\(title)"
+          content: "\(content.prefix(140))"
+          score: "\(score)"
+          isRelevant: "\(isRelevant)"
+        """
     }
 }

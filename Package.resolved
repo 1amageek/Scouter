@@ -1,5 +1,5 @@
 {
-  "originHash" : "ba8eddf4a2ff40e3477c3ac44577e364114539427e563625eda1c07c718031f1",
+  "originHash" : "6bc759911c18a4430f84071cdc15233b6e7087ee074fcead77c49aacae511334",
   "pins" : [
     {
       "identity" : "aspectanalyzer",
@@ -7,7 +7,7 @@
       "location" : "https://github.com/1amageek/AspectAnalyzer.git",
       "state" : {
         "branch" : "main",
-        "revision" : "60ba519628cdd7657e15dd64d148ff22e6b9b76e"
+        "revision" : "70d6c05989a6cd7f7770b1e55882c4b49548796f"
       }
     },
     {
@@ -25,7 +25,7 @@
       "location" : "https://github.com/1amageek/Remark.git",
       "state" : {
         "branch" : "main",
-        "revision" : "776b059633504138c79e96d3240acb6a5de1f609"
+        "revision" : "10ac2ca1c85423738e76d9eb1c87d93af5a1f396"
       }
     },
     {
@@ -34,7 +34,7 @@
       "location" : "https://github.com/1amageek/Selenops.git",
       "state" : {
         "branch" : "main",
-        "revision" : "02ab24ca03347fa8a34c569c35a799f6a99747f6"
+        "revision" : "34f432104d23c003bfb36882fe75a8f319a892a1"
       }
     },
     {
@@ -52,7 +52,16 @@
       "location" : "https://github.com/apple/swift-log.git",
       "state" : {
         "branch" : "main",
-        "revision" : "da3fdd167fb025c3863ff77b2a98948120cfc3b9"
+        "revision" : "1efe6f812904b34ed76ba28fd1f3e9f3bc94f8ec"
+      }
+    },
+    {
+      "identity" : "swiftretry",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/SwiftRetry.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "c816b20c168e2cf646caa35a4aa899c8613b3c1f"
       }
     },
     {
@@ -61,7 +70,16 @@
       "location" : "https://github.com/scinfu/SwiftSoup.git",
       "state" : {
         "branch" : "master",
-        "revision" : "3c2c7e1e72b8abd96eafbae80323c5c1e5317437"
+        "revision" : "0837db354faf9c9deb710dc597046edaadf5360f"
+      }
+    },
+    {
+      "identity" : "unknown",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/Unknown.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "520847e63c28bf1e62a7a0d6d1194468c1c69ff3"
       }
     }
   ],
