@@ -20,21 +20,20 @@ struct VectorSimilarity {
     static func averageEmbedding(_ embeddings: [[Float]]) -> [Float] {
         guard !embeddings.isEmpty else { return [] }
         
-        let rowCount = embeddings.count
-        let colCount = embeddings[0].count
+        let dimension = embeddings[0].count
+        var average = [Float](repeating: 0, count: dimension)
         
-        // フラットな配列に変換してから合計を計算
-        let flattenedEmbeddings = embeddings.flatMap { $0 }
-        var sum = [Float](repeating: 0, count: colCount)
+        // 各次元ごとに合計を計算
+        for embedding in embeddings {
+            guard embedding.count == dimension else { continue }
+            vDSP_vadd(average, 1, embedding, 1, &average, 1, vDSP_Length(dimension))
+        }
         
-        // vDSP で各列の合計を計算
-        vDSP_mtrans(flattenedEmbeddings, 1, &sum, 1, vDSP_Length(colCount), vDSP_Length(rowCount))
+        // 平均を計算
+        var count = Float(embeddings.count)
+        vDSP_vsdiv(average, 1, &count, &average, 1, vDSP_Length(dimension))
         
-        // 平均値を計算
-        var count = Float(rowCount)
-        vDSP_vsdiv(sum, 1, &count, &sum, 1, vDSP_Length(colCount))
-        
-        return sum
+        return average
     }
     
     /// Computes cosine similarity between two single-precision vectors using vDSP operations.
