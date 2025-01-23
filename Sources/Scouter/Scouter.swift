@@ -1,10 +1,3 @@
-//
-//  Scouter.swift
-//  Scouter
-//
-//  Created by Norikazu Muramoto on 2024/11/10.
-//
-
 import Foundation
 import SwiftSoup
 import OllamaKit
@@ -14,40 +7,43 @@ import Logging
 import Unknown
 import OpenAI
 
-public struct Scouter: Sendable {
+public enum TerminationReason: String, Sendable {
+    case maxPagesReached = "Reached maximum number of crawled pages"
+    case lowPriorityStreakExceeded = "Too many consecutive low priority pages"
+    case completed = "Successfully completed crawling"
+}
 
+public struct Scouter: Sendable {
     public static func search(
         prompt: String,
         options: Options = .default(),
         logger: Logger? = nil
     ) async throws -> Result {
-        let startTime = Date()
+        print("Prompt: \(prompt)")
         
-        // Google検索URLの作成
+        let startTime = Date()
         let encodedQuery = try encodeGoogleSearchQuery(prompt)
         let searchUrl = URL(string: "https://www.google.com/search?q=\(encodedQuery)")!
         
-        // Google検索結果の取得
         let searchResults = try await fetchGoogleSearchResults(searchUrl, logger: logger)
-        // クローラーの初期化と実行
         let crawler = Crawler(
             query: prompt,
             maxConcurrent: options.maxConcurrentCrawls,
             logger: logger
         )
-        // 初期URLセットからクローリング開始
+        
         for url in searchResults {
             try await crawler.crawl(startUrl: url)
         }
         
-        // 結果の取得
-        let pages = await crawler.getCrawledPages()
+        let (pages, terminationReason) = await crawler.getCrawlerState()
         let duration = Date().timeIntervalSince(startTime)
-
+        
         return Result(
             query: prompt,
             pages: pages,
-            searchDuration: duration
+            searchDuration: duration,
+            terminationReason: terminationReason
         )
     }
     
@@ -57,22 +53,16 @@ public struct Scouter: Sendable {
     ) async throws -> [URL] {
         logger?.info("Fetching Google search results", metadata: ["url": .string(url.absoluteString)])
         
-        // Google検索ページの取得
         let remark = try await Remark.fetch(from: url, method: .interactive)
-        
-        // メインコンテンツ部分の抽出
         let div = try SwiftSoup.parse(remark.html).select("div#rcnt")
         let searchContent = try Remark(try div.html())
         
-        // リンクの抽出と変換
         let links = try searchContent.extractLinks()
             .compactMap { link -> URL? in
                 guard let url = URL(string: link.url) else { return nil }
-                // Googleのリダイレクトリンクを処理
                 return processGoogleRedirect(url)
             }
             .filter { url in
-                // 不要なドメインを除外
                 !isExcludedDomain(url)
             }
         logger?.info("Found search result links", metadata: ["count": .string("\(links.count)")])
@@ -111,36 +101,32 @@ extension Scouter {
         public let query: String
         public let pages: [Page]
         public let searchDuration: TimeInterval
+        public let terminationReason: TerminationReason
         
-        public init(query: String, pages: [Page], searchDuration: TimeInterval) {
+        public init(
+            query: String,
+            pages: [Page],
+            searchDuration: TimeInterval,
+            terminationReason: TerminationReason
+        ) {
             self.query = query
             self.pages = pages
             self.searchDuration = searchDuration
+            self.terminationReason = terminationReason
         }
     }
-    /// クローラーの設定オプション
+    
     public struct Options: Sendable {
-        /// LLMの設定
         public let model: String
-        
-        /// クローリングの制限設定
-        public let maxDepth: Int           // 最大探索深さ
-        public let maxPages: Int           // 最大ページ数
-        public let minRelevantPages: Int   // 必要な関連ページ数
-        public let maxRetries: Int         // 最大リトライ回数
-        
-        /// スコアリングのしきい値
-        public let relevancyThreshold: Float  // ページの関連性しきい値
-        public let minimumLinkScore: Float   // リンクの最小スコア
-        
-        /// 並列処理の設定
-        public let maxConcurrentCrawls: Int // 同時クロール数
-        public let evaluateChunkSize: Int   // 一度に評価するリンク数
-        
-        /// タイムアウト設定
-        public let timeout: TimeInterval     // ネットワークタイムアウト
-        
-        /// ドメイン制御
+        public let maxDepth: Int
+        public let maxPages: Int
+        public let minRelevantPages: Int
+        public let maxRetries: Int
+        public let relevancyThreshold: Float
+        public let minimumLinkScore: Float
+        public let maxConcurrentCrawls: Int
+        public let evaluateChunkSize: Int
+        public let timeout: TimeInterval
         public let domainControl: DomainControl
         
         public init(
@@ -169,7 +155,6 @@ extension Scouter {
             self.domainControl = domainControl
         }
         
-        /// デフォルト設定のインスタンスを生成
         public static func `default`() -> Self {
             Self(
                 model: "llama3.2:latest",
@@ -186,31 +171,7 @@ extension Scouter {
         }
     }
     
-    /// ドメイン制御の設定
-    public struct DomainControl: Sendable {
-        /// 関連性カウントから除外するドメイン
-        public let excludeFromRelevant: Set<String>
-        
-        /// クローリング対象から除外するドメイン
-        public let excludeFromCrawling: Set<String>
-        
-        /// 評価対象から除外するドメイン
-        public let excludeFromEvaluation: Set<String>
-        
-        public init(
-            excludeFromRelevant: Set<String> = ["google.com", "google.co.jp"],
-            excludeFromCrawling: Set<String> = [],
-            excludeFromEvaluation: Set<String> = ["facebook.com", "instagram.com"]
-        ) {
-            self.excludeFromRelevant = excludeFromRelevant
-            self.excludeFromCrawling = excludeFromCrawling
-            self.excludeFromEvaluation = excludeFromEvaluation
-        }
-    }
-    
-    /// オプション設定時のエラー
     public enum OptionsError: Error, CustomStringConvertible {
-        /// minimumLinkScoreがrelevancyThreshold以上の場合に発生
         case invalidThresholds(minimumLinkScore: Float, relevancyThreshold: Float)
         
         public var description: String {
@@ -221,3 +182,4 @@ extension Scouter {
         }
     }
 }
+

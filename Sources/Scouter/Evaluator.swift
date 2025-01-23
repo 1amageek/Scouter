@@ -11,8 +11,12 @@ import Remark
 
 public actor Evaluator {
     
-    struct EvaluatedResult: Codable {
+    struct LinkEvaluatedResult: Codable {
         let links: [TargetLink]
+    }
+    
+    struct PageEvaluatedResult: Codable {
+        let priority: Priority
     }
     
     private let model: String
@@ -28,7 +32,7 @@ public actor Evaluator {
         let data = OKChatRequestData(
             model: model,
             messages: [
-                .system(systemPrompt),
+                .system(linkEvaluationPrompt),
                 .user(generatePrompt(targets: targets, query: query))
             ],
             format: .object(
@@ -52,7 +56,7 @@ public actor Evaluator {
         }
 
         let jsonData = response.data(using: .utf8)!
-        let result = try JSONDecoder().decode(EvaluatedResult.self, from: jsonData)
+        let result = try JSONDecoder().decode(LinkEvaluatedResult.self, from: jsonData)
         return result.links
     }
     
@@ -61,13 +65,13 @@ public actor Evaluator {
         let data = OKChatRequestData(
             model: model,
             messages: [
-                .system(systemPrompt),
+                .system(contentEvaluationPrompt),
                 .user(generateContentPrompt(content: content, query: query))
             ],
             format: .object(
                 description: "Content priority",
-                properties: ["rating": .integer(description: "Rating between 1-5")],
-                required: ["rating"]
+                properties: ["priority": .integer(description: "Rating between 1-5")],
+                required: ["priority"]
             )
         )
         
@@ -77,18 +81,25 @@ public actor Evaluator {
             }
         }
         
-        if let rating = Int(response.trimmingCharacters(in: .whitespacesAndNewlines)) {
-            return Priority(rawValue: rating) ?? .low
-        }
-        return .low
+        let jsonData = response.data(using: .utf8)!
+        let result = try JSONDecoder().decode(PageEvaluatedResult.self, from: jsonData)
+        return result.priority
     }
     
-    private let systemPrompt = """
-        You are a web content evaluator focused on identifying and prioritizing relevant information based on user queries. Follow these steps:
-        
-        1. Understand the query: Determine the user's intent and the type of information they seek.
-        2. Evaluate each link: Check relevance, credibility, and whether the content directly addresses the query.
-        3. Assign a priority: Rate each link from 1 (low relevance) to 5 (high relevance) based on its value.
+    private let linkEvaluationPrompt = """
+        You are a link evaluator that analyzes URLs and their associated texts to determine their potential relevance to user queries.
+        Focus on:
+        1. URL structure and domain credibility
+        2. Link text relevance to the query
+        3. Likelihood of containing query-specific information
+        """
+    
+    private let contentEvaluationPrompt = """
+        You are a content evaluator that analyzes webpage content to determine its relevance to user queries.
+        Focus on:
+        1. Direct answers to the query
+        2. Content depth and comprehensiveness
+        3. Information accuracy and specificity
         """
     
     private func generatePrompt(targets: [URL: [String]], query: String) -> String {
@@ -118,7 +129,7 @@ public actor Evaluator {
     private func generateContentPrompt(content: String, query: String) -> String {
         """
         Search Query: \(query)
-        Content to evaluate: \(content.prefix(1000))
+        Content to evaluate: \(content.prefix(400))
         
         Evaluate how well this content answers or relates to the search query.
         Rate from 1-5:

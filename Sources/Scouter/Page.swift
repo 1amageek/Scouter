@@ -16,11 +16,14 @@ public struct Page: Identifiable, Hashable, Sendable {
     
     public var remark: Remark
     
+    public var priority: Priority
+    
     public var crawledAt: Date
     
-    public init(url: URL, remark: Remark, crawledAt: Date) {
+    public init(url: URL, remark: Remark, priority: Priority, crawledAt: Date) {
         self.url = url
         self.remark = remark
+        self.priority = priority        
         self.crawledAt = crawledAt
     }
     
