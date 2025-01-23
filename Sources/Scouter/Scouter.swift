@@ -6,47 +6,194 @@
 //
 
 import Foundation
-import Selenops
 import SwiftSoup
 import OllamaKit
 import Remark
 import AspectAnalyzer
 import Logging
 import Unknown
+import OpenAI
 
 public struct Scouter: Sendable {
-    
-    public struct Result: Sendable {
-        public let query: Scouter.Query
-        public let visitedPages: [VisitedPage]
-        public let relevantPages: [VisitedPage]
-        public let searchDuration: TimeInterval
+
+    public static func search(
+        prompt: String,
+        options: Options = .default(),
+        logger: Logger? = nil
+    ) async throws -> Result {
+        let startTime = Date()
         
-        public init(
-            query: Scouter.Query,
-            visitedPages: [VisitedPage],
-            relevantPages: [VisitedPage],
-            searchDuration: TimeInterval
-        ) {
-            self.query = query
-            self.visitedPages = visitedPages
-            self.relevantPages = relevantPages
-            self.searchDuration = searchDuration
+        // Google検索URLの作成
+        let encodedQuery = try encodeGoogleSearchQuery(prompt)
+        let searchUrl = URL(string: "https://www.google.com/search?q=\(encodedQuery)")!
+        
+        // Google検索結果の取得
+        let searchResults = try await fetchGoogleSearchResults(searchUrl, logger: logger)
+        // クローラーの初期化と実行
+        let crawler = Crawler(
+            query: prompt,
+            maxConcurrent: options.maxConcurrentCrawls
+        )        
+        // 初期URLセットからクローリング開始
+        for url in searchResults {
+            try await crawler.crawl(startUrl: url)
+        }
+        
+        // 結果の取得
+        let pages = await crawler.getCrawledPages()
+        let duration = Date().timeIntervalSince(startTime)
+
+        return Result(
+            query: prompt,
+            pages: pages,
+            searchDuration: duration
+        )
+    }
+    
+    private static func fetchGoogleSearchResults(
+        _ url: URL,
+        logger: Logger?
+    ) async throws -> [URL] {
+        logger?.info("Fetching Google search results", metadata: ["url": .string(url.absoluteString)])
+        
+        // Google検索ページの取得
+        let remark = try await Remark.fetch(from: url, method: .interactive)
+        
+        // メインコンテンツ部分の抽出
+        let div = try SwiftSoup.parse(remark.html).select("div#rcnt")
+        let searchContent = try Remark(try div.html())
+        
+        // リンクの抽出と変換
+        let links = try searchContent.extractLinks()
+            .compactMap { link -> URL? in
+                guard let url = URL(string: link.url) else { return nil }
+                // Googleのリダイレクトリンクを処理
+                return processGoogleRedirect(url)
+            }
+            .filter { url in
+                // 不要なドメインを除外
+                !isExcludedDomain(url)
+            }
+        logger?.info("Found search result links", metadata: ["count": .string("\(links.count)")])
+        return links
+    }
+    
+    private static func processGoogleRedirect(_ url: URL) -> URL {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+              components.path == "/url",
+              let destination = components.queryItems?.first(where: { $0.name == "q" })?.value,
+              let destUrl = URL(string: destination) else {
+            return url
+        }
+        return destUrl
+    }
+    
+    private static func isExcludedDomain(_ url: URL) -> Bool {
+        let excludedDomains = ["google.com", "google.co.jp", "facebook.com", "instagram.com"]
+        guard let host = url.host?.lowercased() else { return true }
+        return excludedDomains.contains { domain in
+            host == domain || host.hasSuffix("." + domain)
         }
     }
     
-    /// Domain control configuration for the crawler
+    private static func encodeGoogleSearchQuery(_ query: String) throws -> String {
+        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            throw URLError(.badURL)
+        }
+        return encoded
+    }
+}
+
+extension Scouter {
+    
+    public struct Result: Sendable {
+        public let query: String
+        public let pages: [Page]
+        public let searchDuration: TimeInterval
+        
+        public init(query: String, pages: [Page], searchDuration: TimeInterval) {
+            self.query = query
+            self.pages = pages
+            self.searchDuration = searchDuration
+        }
+    }
+    /// クローラーの設定オプション
+    public struct Options: Sendable {
+        /// LLMの設定
+        public let model: String
+        
+        /// クローリングの制限設定
+        public let maxDepth: Int           // 最大探索深さ
+        public let maxPages: Int           // 最大ページ数
+        public let minRelevantPages: Int   // 必要な関連ページ数
+        public let maxRetries: Int         // 最大リトライ回数
+        
+        /// スコアリングのしきい値
+        public let relevancyThreshold: Float  // ページの関連性しきい値
+        public let minimumLinkScore: Float   // リンクの最小スコア
+        
+        /// 並列処理の設定
+        public let maxConcurrentCrawls: Int // 同時クロール数
+        public let evaluateChunkSize: Int   // 一度に評価するリンク数
+        
+        /// タイムアウト設定
+        public let timeout: TimeInterval     // ネットワークタイムアウト
+        
+        /// ドメイン制御
+        public let domainControl: DomainControl
+        
+        public init(
+            model: String = "llama3.2:latest",
+            maxDepth: Int = 5,
+            maxPages: Int = 100,
+            minRelevantPages: Int = 8,
+            maxRetries: Int = 3,
+            relevancyThreshold: Float = 0.4,
+            minimumLinkScore: Float = 0.3,
+            maxConcurrentCrawls: Int = 5,
+            evaluateChunkSize: Int = 20,
+            timeout: TimeInterval = 30,
+            domainControl: DomainControl = .init()
+        ) {
+            self.model = model
+            self.maxDepth = maxDepth
+            self.maxPages = maxPages
+            self.minRelevantPages = minRelevantPages
+            self.maxRetries = maxRetries
+            self.relevancyThreshold = relevancyThreshold
+            self.minimumLinkScore = minimumLinkScore
+            self.maxConcurrentCrawls = maxConcurrentCrawls
+            self.evaluateChunkSize = evaluateChunkSize
+            self.timeout = timeout
+            self.domainControl = domainControl
+        }
+        
+        /// デフォルト設定のインスタンスを生成
+        public static func `default`() -> Self {
+            Self(
+                model: "llama3.2:latest",
+                maxDepth: 2,
+                maxPages: 100,
+                minRelevantPages: 8,
+                maxRetries: 3,
+                relevancyThreshold: 0.4,
+                minimumLinkScore: 0.3,
+                maxConcurrentCrawls: 5,
+                evaluateChunkSize: 20,
+                timeout: 30
+            )
+        }
+    }
+    
+    /// ドメイン制御の設定
     public struct DomainControl: Sendable {
-        /// Domains to exclude from relevancy counting
-        /// These pages will be crawled but not counted towards minRelevantPages
+        /// 関連性カウントから除外するドメイン
         public let excludeFromRelevant: Set<String>
         
-        /// Domains to completely skip during crawling
-        /// These pages will not be crawled at all
+        /// クローリング対象から除外するドメイン
         public let excludeFromCrawling: Set<String>
         
-        /// Domains to skip during link evaluation
-        /// Links from these domains will not be evaluated for relevancy
+        /// 評価対象から除外するドメイン
         public let excludeFromEvaluation: Set<String>
         
         public init(
@@ -60,9 +207,9 @@ public struct Scouter: Sendable {
         }
     }
     
-    /// Errors that can occur during Options initialization
+    /// オプション設定時のエラー
     public enum OptionsError: Error, CustomStringConvertible {
-        /// Thrown when minimumLinkScore is greater than or equal to relevancyThreshold
+        /// minimumLinkScoreがrelevancyThreshold以上の場合に発生
         case invalidThresholds(minimumLinkScore: Float, relevancyThreshold: Float)
         
         public var description: String {
@@ -71,198 +218,5 @@ public struct Scouter: Sendable {
                 return "minimumLinkScore (\(min)) must be lower than relevancyThreshold (\(relevancy))"
             }
         }
-    }
-    
-    /// Configuration options for the Scouter web crawler.
-    ///
-    /// Use this structure to configure the behavior of the Scouter web crawler,
-    /// including model selection, crawling limits, and relevancy thresholds.
-    ///
-    /// Example usage:
-    /// ```swift
-    /// let options = Scouter.Options(
-    ///     maxPages: 50,
-    ///     minRelevantPages: 3,
-    ///     relevancyThreshold: 0.5
-    /// )
-    /// let result = try await Scouter.search(prompt: query, url: url, options: options)
-    /// ```
-    public struct Options: Sendable {
-        /// Domain control settings
-        public let domainControl: DomainControl
-        
-        /// The model identifier for embeddings and AI-based analysis.
-        public let model: String
-        
-        /// Maximum number of pages to visit during crawling.
-        public let maxPages: Int
-        
-        /// Minimum number of relevant pages required to consider the search complete.
-        public let minRelevantPages: Int
-        
-        /// Threshold for determining page relevancy after visiting (0.0 to 1.0).
-        ///
-        /// Pages with similarity scores above this threshold are considered relevant.
-        /// This is used for the final determination of page relevancy after content analysis.
-        public let relevancyThreshold: Float
-        
-        /// Minimum threshold for link evaluation (0.0 to 1.0).
-        ///
-        /// Links with evaluation scores below this threshold will be filtered out
-        /// before visiting. This should be lower than relevancyThreshold as it's
-        /// just an initial filter to remove clearly irrelevant pages.
-        public let minimumLinkScore: Float
-        
-        /// Maximum number of links to keep in evaluation queue.
-        public let linkEvaluationLimit: Int
-        
-        /// Number of links to evaluate in each batch.
-        public let evaluateLinksChunkSize: Int
-        
-        /// Maximum number of retry attempts for failed operations.
-        public let maxRetries: Int
-        
-        /// Timeout duration for network operations in seconds.
-        public let timeout: TimeInterval
-        
-        public init(
-            model: String = "llama3.2:latest",
-            maxPages: Int = 100,
-            minRelevantPages: Int = 8,
-            relevancyThreshold: Float = 0.4,
-            minimumLinkScore: Float = 0.53,
-            linkEvaluationLimit: Int = 400,
-            evaluateLinksChunkSize: Int = 20,
-            maxRetries: Int = 3,
-            timeout: TimeInterval = 30,
-            domainControl: DomainControl = .init()
-        ) {
-            self.model = model
-            self.maxPages = maxPages
-            self.minRelevantPages = minRelevantPages
-            self.relevancyThreshold = relevancyThreshold
-            self.minimumLinkScore = minimumLinkScore
-            self.linkEvaluationLimit = linkEvaluationLimit
-            self.evaluateLinksChunkSize = evaluateLinksChunkSize
-            self.maxRetries = maxRetries
-            self.timeout = timeout
-            self.domainControl = domainControl
-        }
-        
-        public static func `default`() -> Self {
-            Self()
-        }
-    }
-    
-    public static func search(
-        prompt: String,
-        url: URL,
-        options: Options = .default(),
-        logger: Logger? = nil
-    ) async throws -> Result? {
-        let startTime = DispatchTime.now()
-        let aspectAnalyzer = AspectAnalyzer(
-            model: options.model,
-            logger: logger
-        )
-        let understanding = try await Unknown(prompt).comprehend()
-        
-        let prompt = """
-            \(prompt)
-            
-            context: \(understanding.definition)
-            """
-
-        let keywordAnalysis = try await aspectAnalyzer.extractKeywords(prompt)
-        let keywords = keywordAnalysis.keywords
-        print("[Query]:", prompt)
-        print("[Keywords]:", keywords.map(\.description).joined(separator: ","))
-        let url = URL(
-            string: "https://www.google.com/search?q=\(keywords.joined(separator: " "))"
-        )!
-        print("[URL]:", url)
-        let embedding = try await VectorSimilarity.getEmbedding(
-            for: prompt,
-            model: options.model
-        )
-        let query = Query(prompt: prompt, embedding: embedding)
-        let queryAnalysis = try await query.analyze(model: options.model)
-        print(queryAnalysis)
-        // Create crawler and delegate
-        let crawler = Crawler()
-        let delegate = ScouterCrawlerDelegate(
-            queryAnalysis: queryAnalysis,
-            options: options,
-            logger: logger
-        )
-        
-        await crawler.setDelegate(delegate)
-        await crawler.start(url: url)
-        
-        // Generate result
-        let visitedPages = await delegate.getVisitedPages()
-        let relevantPages = visitedPages.filter { $0.isRelevant }
-        let duration = Double(DispatchTime.now().uptimeNanoseconds - startTime.uptimeNanoseconds) / 1_000_000_000
-        return Result(
-            query: query,
-            visitedPages: visitedPages,
-            relevantPages: relevantPages,
-            searchDuration: duration
-        )
-    }
-    
-    private static func encodeGoogleSearchQuery(_ query: String) throws -> String {
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            throw URLError(.badURL)
-        }
-        return encoded
-    }
-    
-    private static func encodeGoogleSearch(_ keywords: [String]) throws -> String {
-        guard let encoded = keywords
-            .joined(separator: " ")
-            .addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
-            throw URLError(.badURL)
-        }
-        return encoded
-    }
-}
-
-extension Scouter.Result: CustomStringConvertible {
-    public var description: String {
-        let separator = String(repeating: "=", count: 80)
-        let shortSeparator = String(repeating: "-", count: 40)
-        
-        var output = [
-            separator,
-            "🔍 Search Results",
-            separator,
-            "",
-            "📝 Query:",
-            query.prompt,
-            "",
-            "⏱️ Search Duration: \(String(format: "%.2f seconds", searchDuration))",
-            "",
-            "📊 Statistics:",
-            "- Total Pages Visited: \(visitedPages.count)",
-            "- Relevant Pages Found: \(relevantPages.count)",
-            "",
-            "",
-            "📚 Relevant Sources:",
-            shortSeparator
-        ]
-        
-        // Add relevant pages with their similarity scores
-        for (index, page) in relevantPages.enumerated() {
-            output.append("""
-                [\(index + 1)] \(page.url.absoluteString)
-                    Similarity: \(String(format: "%.2f%%", page.score * 100))
-                    Title: \(page.title)
-                """)
-        }
-        
-        output.append(separator)
-        
-        return output.joined(separator: "\n")
     }
 }
