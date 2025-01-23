@@ -32,8 +32,9 @@ public struct Scouter: Sendable {
         // クローラーの初期化と実行
         let crawler = Crawler(
             query: prompt,
-            maxConcurrent: options.maxConcurrentCrawls
-        )        
+            maxConcurrent: options.maxConcurrentCrawls,
+            logger: logger
+        )
         // 初期URLセットからクローリング開始
         for url in searchResults {
             try await crawler.crawl(startUrl: url)

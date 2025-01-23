@@ -15,5 +15,4 @@ import Logging
         url: URL(string: "https://www.apple.com/jp/")!,
         logger: nil
     )
-    print(result!)
 }
