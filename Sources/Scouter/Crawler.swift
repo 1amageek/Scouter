@@ -11,7 +11,7 @@ import Logging
 
 public actor Crawler {
     private let state: CrawlerState
-    private let evaluator: Evaluator
+    private let evaluator: any Evaluating
     private let query: String
     private let domainControl: DomainControl
     private let logger: Logger?
@@ -20,12 +20,13 @@ public actor Crawler {
     public init(
         query: String,
         maxConcurrent: Int = 5,
+        evaluator: any Evaluating,
         domainControl: DomainControl = DomainControl(),
         logger: Logger? = nil
     ) {
         self.query = query
         self.state = CrawlerState(maxConcurrentCrawls: maxConcurrent, maxPages: 30)
-        self.evaluator = Evaluator()
+        self.evaluator = evaluator
         self.domainControl = domainControl
         self.logger = logger
     }

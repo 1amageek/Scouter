@@ -4,8 +4,6 @@ import OllamaKit
 import Remark
 import AspectAnalyzer
 import Logging
-import Unknown
-import OpenAI
 
 public enum TerminationReason: String, Sendable {
     case maxPagesReached = "Reached maximum number of crawled pages"
@@ -26,9 +24,11 @@ public struct Scouter: Sendable {
         let searchUrl = URL(string: "https://www.google.com/search?q=\(encodedQuery)")!
         
         let searchResults = try await fetchGoogleSearchResults(searchUrl, logger: logger)
+
         let crawler = Crawler(
             query: prompt,
             maxConcurrent: options.maxConcurrentCrawls,
+            evaluator: OllamaEvaluator(),
             logger: logger
         )
         

@@ -1,5 +1,5 @@
 {
-  "originHash" : "a40a5383e6839c4edb746fafdf201c21ffbd95b2407014683b524224a0387853",
+  "originHash" : "af8e0b469e9b0df6dc197d772b49abd82e7e118434ef9d1a1e99dab3f7a495f7",
   "pins" : [
     {
       "identity" : "aspectanalyzer",
@@ -20,21 +20,12 @@
       }
     },
     {
-      "identity" : "openai",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/MacPaw/OpenAI.git",
-      "state" : {
-        "branch" : "main",
-        "revision" : "add6cfb8e976c383298d6db2305e7989abc822f9"
-      }
-    },
-    {
       "identity" : "remark",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/1amageek/Remark.git",
       "state" : {
         "branch" : "main",
-        "revision" : "fc7df01da2834ecd5b197458fa8d7f9493f6e0cd"
+        "revision" : "3361015faa136ce6e8e53a661b56c1c26a2e364a"
       }
     },
     {
@@ -53,6 +44,15 @@
       "state" : {
         "revision" : "4a9284e44d8ef2bfc863734e9ff535909ae6b27a",
         "version" : "2.0.1"
+      }
+    },
+    {
+      "identity" : "swift-llm-chat-openai",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kevinhermawan/swift-llm-chat-openai.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "3ffffb4b85b3b764d72ef49adedce142bbd49e6c"
       }
     },
     {
@@ -79,7 +79,7 @@
       "location" : "https://github.com/scinfu/SwiftSoup.git",
       "state" : {
         "branch" : "master",
-        "revision" : "cce8a91bbaaae4e9ee2fcc9505e2b0f0f29dab80"
+        "revision" : "6b4930da67b462d3f200472c902dd016d37a554d"
       }
     },
     {
