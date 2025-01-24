@@ -18,7 +18,7 @@ public actor OpenAIEvaluator: Evaluating {
         self.model = model
     }
     
-    public func evaluateTargets(targets: [URL: [String]], query: String) async throws -> [TargetLink] {
+    public func evaluateTargets(targets: [URL: [String]], query: String) async throws -> [LinkEvaluation] {
         let completion = try await requestOpenAI(
             responseType: LinkEvaluatedResult.self,
             messages: [

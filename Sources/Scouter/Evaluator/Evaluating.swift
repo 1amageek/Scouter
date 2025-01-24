@@ -8,7 +8,7 @@
 import Foundation
 
 public protocol Evaluating: Sendable {
-    func evaluateTargets(targets: [URL: [String]], query: String) async throws -> [TargetLink]
+    func evaluateTargets(targets: [URL: [String]], query: String) async throws -> [LinkEvaluation]
     func evaluateContent(content: String, query: String) async throws -> Priority
 }
 
@@ -16,8 +16,14 @@ enum EvaluatorError: Error {
     case invalidResponse
 }
 
+public struct LinkEvaluation: Codable, Sendable {
+    let url: URL
+    let texts: [String]
+    let priority: Priority
+}
+
 struct LinkEvaluatedResult: Codable {
-    let links: [TargetLink]
+    let links: [LinkEvaluation]
 }
 
 struct PageEvaluatedResult: Codable {
@@ -38,10 +44,11 @@ extension Evaluating {
         1. URL credibility: Is the domain trustworthy, and does the URL suggest relevant content?
         2. Link text relevance: Does the text directly relate to the query?
         3. Query-specific content: Is the link likely to contain detailed, useful information?
+        4. Language consistency: Does the link's content match the query's language? Prioritize links in the same language.
         
         Step 3: Adjust for irrelevant links:
         - Lower priority for terms of service, privacy policies, language-switching links, or generic forms.
-        - Focus on links that provide clear, query-relevant value.
+        - Focus on links that provide clear, query-relevant value in the same language as the query.
         """
     }
     

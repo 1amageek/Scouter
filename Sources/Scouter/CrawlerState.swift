@@ -15,6 +15,8 @@ public actor CrawlerState {
     private var maxLowPriorityStreak: Int
     private var maxCrawledPages: Int
     private var activeCrawls: Int = 0
+    private let depthDecayFactor: Double = 0.89
+    private let maxDepth: Int = 5
     private var terminationReason: TerminationReason?
     
     public init(
@@ -50,12 +52,13 @@ public actor CrawlerState {
     
     public func nextTarget() -> TargetLink? {
         guard activeCrawls < maxConcurrentCrawls else { return nil }
-        let nextTarget = targetLinks.max { $0.priority < $1.priority }
+        let nextTarget = targetLinks.max { a, b in
+            return a.score < b.score
+        }
         if let target = nextTarget {
             targetLinks.remove(target)
-            activeCrawls += 1
-            
-            if crawledPages.count > 3 && target.priority.rawValue <= 3 {
+            activeCrawls += 1            
+            if crawledPages.count > 3 && target.score <= 3 {
                 lowPriorityStreak += 1
             } else {
                 lowPriorityStreak = 0
@@ -63,7 +66,7 @@ public actor CrawlerState {
         }
         return nextTarget
     }
-    
+        
     public func completeCrawl() {
         if activeCrawls > 0 {
             activeCrawls -= 1

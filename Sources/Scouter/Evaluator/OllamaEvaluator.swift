@@ -19,7 +19,7 @@ public actor OllamaEvaluator: Evaluating {
         self.ollamaKit = OllamaKit()
     }
     
-    public func evaluateTargets(targets: [URL: [String]], query: String) async throws -> [TargetLink] {
+    public func evaluateTargets(targets: [URL: [String]], query: String) async throws -> [LinkEvaluation] {
         let data = OKChatRequestData(
             model: model,
             messages: [

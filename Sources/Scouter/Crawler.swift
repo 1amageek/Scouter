@@ -63,7 +63,7 @@ public actor Crawler {
         }
     }
     
-    public func crawl(startUrl: URL) async throws {
+    public func crawl(startUrl: URL, depth: Int = 0) async throws {
         guard let normalizedUrl = normalizeUrl(startUrl) else {
             logger?.warning("Invalid URL: \(startUrl)")
             return
@@ -103,15 +103,18 @@ public actor Crawler {
         filteredLinksByUrl.forEach { url in
             print(url.key)
         }
-        guard let updatedTargets: [TargetLink] = try? await evaluator.evaluateTargets(targets: filteredLinksByUrl, query: query) else {
+        guard let evaluatedLinks: [LinkEvaluation] = try? await evaluator.evaluateTargets(targets: filteredLinksByUrl, query: query) else {
             logger?.error("Failed to evaluate targets for \(normalizedUrl)")
             return
         }
-        for target in updatedTargets {
+        let targetLinks = evaluatedLinks.map {
+            TargetLink(priority: $0.priority, depth: depth + 1, url: $0.url, texts: $0.texts)
+        }
+        for target in targetLinks {
             if await state.addTarget(target) {
                 logger?
                     .info(
-                        "[\(target.priority.rawValue)]: \(target.url) | \(target.texts.joined(separator: ", "))"
+                        "[\(target.priority.rawValue)-\(target.depth)(\(target.score))]: \(target.url) | \(target.texts.joined(separator: ", "))"
                     )
             }
         }
@@ -139,7 +142,10 @@ public actor Crawler {
             while let nextTarget = await state.nextTarget() {
                 group.addTask {
                     do {
-                        try await self.crawl(startUrl: nextTarget.url)
+                        try await self.crawl(
+                            startUrl: nextTarget.url,
+                            depth: nextTarget.depth
+                        )
                     } catch {
                         self.logger?.error("Error crawling \(nextTarget.url): \(error.localizedDescription)")
                     }

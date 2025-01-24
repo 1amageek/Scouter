@@ -10,16 +10,26 @@ import Remark
 
 public struct TargetLink: Identifiable, Hashable, Sendable, Codable {
     public var id: String { url.absoluteString }
+    public let depth: Int
     public var priority: Priority
     public var url: URL
     public var texts: [String]
-    
-    enum CodingKeys: String, CodingKey {
-        case priority, url, texts
+    public var score: Float {
+        return Float(priority.rawValue) * pow(0.94, Float(depth))
     }
     
-    public init(priority: Priority = .medium, url: URL, texts: [String]) {
+    enum CodingKeys: String, CodingKey {
+        case priority, url, texts, depth
+    }
+    
+    public init(
+        priority: Priority = .medium,
+        depth: Int = 0,
+        url: URL,
+        texts: [String]
+    ) {
         self.priority = priority
+        self.depth = depth
         self.url = url
         self.texts = texts
     }
