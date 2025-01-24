@@ -28,9 +28,11 @@ struct ScouterCommand: AsyncParsableCommand {
             logger: Logger(label: "Scouter")
         )
         print(result.terminationReason)
-        print("--------------------------------------------------------------------")
+        print("==========")
         result.pages.forEach { page in
+            print("== [\(page.priority.rawValue)] ==")
             print(page.remark.plainText)
+            print("\n\n-------")
         }
     }
 }

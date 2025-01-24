@@ -80,7 +80,7 @@ public struct Scouter: Sendable {
     }
     
     private static func isExcludedDomain(_ url: URL) -> Bool {
-        let excludedDomains = ["google.com", "google.co.jp", "facebook.com", "instagram.com"]
+        let excludedDomains = ["google.com", "google.co.jp", "facebook.com", "instagram.com", "youtube.com", "pinterest.com", "twitter.com", "x.com"]
         guard let host = url.host?.lowercased() else { return true }
         return excludedDomains.contains { domain in
             host == domain || host.hasSuffix("." + domain)

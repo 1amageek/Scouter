@@ -74,8 +74,8 @@ public actor Crawler {
             return
         }
         
-        if await state.shouldTerminate() {
-            logger?.info("Crawling terminated due to completion conditions")
+        if let terminationReason = await state.shouldTerminate() {
+            logger?.info("Crawling terminated: \(terminationReason)")
             return
         }
         
@@ -85,20 +85,35 @@ public actor Crawler {
         }
         
         let links = try remark.extractLinks()
+        let filteredLinks = links.filter { link in
+            guard let url = URL(string: link.url),
+                  url.scheme?.lowercased() == "https",
+                  !link.text.isEmpty else {
+                return false
+            }
+            return true
+        }
         var filteredLinksByUrl: [URL: [String]] = [:]
-        for link in links {
+        for link in filteredLinks {
             guard let linkUrl = URL(string: link.url), !link.text.isEmpty,
                   let normalizedLinkUrl = normalizeUrl(linkUrl) else { continue }
             filteredLinksByUrl[normalizedLinkUrl, default: []].append(link.text)
         }
         filteredLinksByUrl = filterInvalidTargets(filteredLinksByUrl)
+        filteredLinksByUrl.forEach { url in
+            print(url.key)
+        }
         guard let updatedTargets: [TargetLink] = try? await evaluator.evaluateTargets(targets: filteredLinksByUrl, query: query) else {
             logger?.error("Failed to evaluate targets for \(normalizedUrl)")
             return
         }
-        
         for target in updatedTargets {
-            await state.addTarget(target)
+            if await state.addTarget(target) {
+                logger?
+                    .info(
+                        "[\(target.priority.rawValue)]: \(target.url) | \(target.texts.joined(separator: ", "))"
+                    )
+            }
         }
         
         guard let pagePriority = try? await evaluator.evaluateContent(

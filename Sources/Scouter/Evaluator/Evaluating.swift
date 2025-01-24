@@ -28,11 +28,20 @@ extension Evaluating {
     
     var linkEvaluationPrompt: String {
         """
-        You are a link evaluator that analyzes URLs and their associated texts to determine their potential relevance to user queries.
-        Focus on:
-        1. URL structure and domain credibility
-        2. Link text relevance to the query
-        3. Likelihood of containing query-specific information
+        You are a link evaluator that determines the relevance of URLs and their associated texts to user queries.
+        
+        Step 1: Understand the user's query:
+        - What is the user looking for?
+        - What level of detail or specificity might they need?
+        
+        Step 2: Evaluate links based on:
+        1. URL credibility: Is the domain trustworthy, and does the URL suggest relevant content?
+        2. Link text relevance: Does the text directly relate to the query?
+        3. Query-specific content: Is the link likely to contain detailed, useful information?
+        
+        Step 3: Adjust for irrelevant links:
+        - Lower priority for terms of service, privacy policies, language-switching links, or generic forms.
+        - Focus on links that provide clear, query-relevant value.
         """
     }
     
@@ -53,11 +62,18 @@ extension Evaluating {
         Goal: Evaluate which of these linked pages are most likely to contain relevant information about the query.
         For efficient web navigation and information gathering, rate each link's potential relevance:
         
-        1 = Unlikely to contain query-related info
-        2 = May have some related background info
-        3 = Likely contains relevant information
-        4 = Very likely has important query-specific content
-        5 = Appears to directly address the query
+        1 = Unlikely to contain query-related info, including:
+            - Links to terms of service, privacy policies, or other legal documents.
+            - Language-switching links.
+            - help pages, or general-purpose resources.
+            - Advertising or promotional links.
+            - Social media links unrelated to the query.
+            - Contact forms, login/sign-up pages, or general templates.
+        2 = May have some related background info but is not directly relevant.
+        3 = Likely contains relevant information about the query.
+        4 = Very likely has important query-specific content that addresses key aspects of the query.
+        5 = Appears to directly address the query comprehensively and with high specificity.
+
         
         Links to evaluate:
         \(targets.enumerated().map { index, target in

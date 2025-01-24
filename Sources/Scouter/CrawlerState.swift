@@ -12,7 +12,7 @@ public actor CrawlerState {
     private var lowPriorityStreak: Int = 0
     private var maxConcurrentCrawls: Int
     private var maxPages: Int
-    private var maxLowPriorityStreak: Int = 2
+    private var maxLowPriorityStreak: Int
     private var maxCrawledPages: Int
     private var activeCrawls: Int = 0
     private var terminationReason: TerminationReason?
@@ -55,7 +55,7 @@ public actor CrawlerState {
             targetLinks.remove(target)
             activeCrawls += 1
             
-            if target.priority.rawValue <= 3 {
+            if crawledPages.count > 3 && target.priority.rawValue <= 3 {
                 lowPriorityStreak += 1
             } else {
                 lowPriorityStreak = 0
@@ -78,16 +78,16 @@ public actor CrawlerState {
         crawledPages.count < maxPages
     }
     
-    public func shouldTerminate() -> Bool {
+    public func shouldTerminate() -> TerminationReason? {
         if crawledPages.count >= maxCrawledPages {
             terminationReason = .maxPagesReached
-            return true
+            return terminationReason
         }
         if lowPriorityStreak >= maxLowPriorityStreak {
             terminationReason = .lowPriorityStreakExceeded
-            return true
+            return terminationReason
         }
-        return false
+        return nil
     }
     
     public func getTerminationReason() -> TerminationReason {
