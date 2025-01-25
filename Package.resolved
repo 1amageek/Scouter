@@ -1,13 +1,58 @@
 {
-  "originHash" : "ab1aa474ca6016fae3071a24ed46d90d9ae4dbbb2adce2b43815fb603e02e7df",
+  "originHash" : "af8e0b469e9b0df6dc197d772b49abd82e7e118434ef9d1a1e99dab3f7a495f7",
   "pins" : [
+    {
+      "identity" : "aspectanalyzer",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/AspectAnalyzer.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "70d6c05989a6cd7f7770b1e55882c4b49548796f"
+      }
+    },
     {
       "identity" : "ollamakit",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/1amageek/OllamaKit.git",
       "state" : {
         "branch" : "main",
-        "revision" : "a2c146c13a6b5e518efbd5993ab3c251cbffe9b7"
+        "revision" : "691604d081e1964f518013e3a291f628a3ac6828"
+      }
+    },
+    {
+      "identity" : "remark",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/Remark.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "8296f6377f026e86ad9cdc936cba7f67b7d27a61"
+      }
+    },
+    {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "5f48a1614f296024df7460b5b91fd07bfb4f3c17"
+      }
+    },
+    {
+      "identity" : "swift-json-schema",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kevinhermawan/swift-json-schema.git",
+      "state" : {
+        "revision" : "4a9284e44d8ef2bfc863734e9ff535909ae6b27a",
+        "version" : "2.0.1"
+      }
+    },
+    {
+      "identity" : "swift-llm-chat-openai",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/kevinhermawan/swift-llm-chat-openai.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "3ffffb4b85b3b764d72ef49adedce142bbd49e6c"
       }
     },
     {
@@ -16,7 +61,16 @@
       "location" : "https://github.com/apple/swift-log.git",
       "state" : {
         "branch" : "main",
-        "revision" : "da3fdd167fb025c3863ff77b2a98948120cfc3b9"
+        "revision" : "f82ce9631f2f8d56550a151b69338651515641f7"
+      }
+    },
+    {
+      "identity" : "swiftretry",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/SwiftRetry.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "c816b20c168e2cf646caa35a4aa899c8613b3c1f"
       }
     },
     {
@@ -25,7 +79,16 @@
       "location" : "https://github.com/scinfu/SwiftSoup.git",
       "state" : {
         "branch" : "master",
-        "revision" : "3c2c7e1e72b8abd96eafbae80323c5c1e5317437"
+        "revision" : "6b4930da67b462d3f200472c902dd016d37a554d"
+      }
+    },
+    {
+      "identity" : "unknown",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/1amageek/Unknown.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "9c616819a174894b15e68e66a7cf41bb7758d92a"
       }
     }
   ],

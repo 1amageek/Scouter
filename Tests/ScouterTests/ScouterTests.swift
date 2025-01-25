@@ -11,10 +11,8 @@ import Logging
     var logger = Logger(label: "scouter")
     logger.logLevel = .debug
     let result = try await Scouter.search(
-        model: "llama3.2:latest",
+        prompt: "紅鮎について教えてください",
         url: URL(string: "https://www.apple.com/jp/")!,
-        prompt: "iPhone16の画面サイズが知りたい。",
-        logger: logger
+        logger: nil
     )
-    print(result!)
 }
