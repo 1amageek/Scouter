@@ -24,11 +24,11 @@ public struct Scouter: Sendable {
         let searchUrl = URL(string: "https://www.google.com/search?q=\(encodedQuery)")!
         
         let searchResults = try await fetchGoogleSearchResults(searchUrl, logger: logger)
-
+        
         let crawler = Crawler(
             query: prompt,
-            maxConcurrent: options.maxConcurrentCrawls,
-            evaluator: OllamaEvaluator(),
+            options: options,
+            evaluator: OllamaEvaluator(model: options.model),
             logger: logger
         )
         
@@ -80,7 +80,7 @@ public struct Scouter: Sendable {
     }
     
     private static func isExcludedDomain(_ url: URL) -> Bool {
-        let excludedDomains = ["google.com", "google.co.jp", "facebook.com", "instagram.com", "youtube.com", "pinterest.com", "twitter.com", "x.com"]
+        let excludedDomains = ["google.com", "google.co.jp", "facebook.com", "instagram.com", "youtube.com", "pinterest.com", "twitter.com", "x.com", "line.me", "weathernews.com", "weather.cnn.co.jp", "weathernews.jp"]
         guard let host = url.host?.lowercased() else { return true }
         return excludedDomains.contains { domain in
             host == domain || host.hasSuffix("." + domain)
@@ -120,8 +120,12 @@ extension Scouter {
         public let model: String
         public let maxDepth: Int
         public let maxPages: Int
+        public let maxCrawledPages: Int
+        public let maxLowPriorityStreak: Int
         public let minRelevantPages: Int
         public let maxRetries: Int
+        public let minHighScoreLinks: Int
+        public let highScoreThreshold: Float
         public let relevancyThreshold: Float
         public let minimumLinkScore: Float
         public let maxConcurrentCrawls: Int
@@ -132,9 +136,13 @@ extension Scouter {
         public init(
             model: String = "llama3.2:latest",
             maxDepth: Int = 5,
-            maxPages: Int = 100,
+            maxPages: Int = 45,
+            maxCrawledPages: Int = 8,
+            maxLowPriorityStreak: Int = 2,
             minRelevantPages: Int = 8,
             maxRetries: Int = 3,
+            minHighScoreLinks: Int = 10,
+            highScoreThreshold: Float = 3.1,
             relevancyThreshold: Float = 0.4,
             minimumLinkScore: Float = 0.3,
             maxConcurrentCrawls: Int = 5,
@@ -145,8 +153,12 @@ extension Scouter {
             self.model = model
             self.maxDepth = maxDepth
             self.maxPages = maxPages
+            self.maxCrawledPages = maxCrawledPages
+            self.maxLowPriorityStreak = maxLowPriorityStreak
             self.minRelevantPages = minRelevantPages
             self.maxRetries = maxRetries
+            self.minHighScoreLinks = minHighScoreLinks
+            self.highScoreThreshold = highScoreThreshold
             self.relevancyThreshold = relevancyThreshold
             self.minimumLinkScore = minimumLinkScore
             self.maxConcurrentCrawls = maxConcurrentCrawls
@@ -156,18 +168,7 @@ extension Scouter {
         }
         
         public static func `default`() -> Self {
-            Self(
-                model: "llama3.2:latest",
-                maxDepth: 2,
-                maxPages: 100,
-                minRelevantPages: 8,
-                maxRetries: 3,
-                relevancyThreshold: 0.4,
-                minimumLinkScore: 0.3,
-                maxConcurrentCrawls: 5,
-                evaluateChunkSize: 20,
-                timeout: 30
-            )
+            Self()
         }
     }
     

@@ -43,3 +43,8 @@ public struct TargetLink: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
+extension TargetLink {
+    var logDescription: String {
+        "[\(String(format: "P%d D%d S%.1f", priority.rawValue, depth, score))] \(url.absoluteString) » \(texts.joined(separator: " | "))"
+    }
+}

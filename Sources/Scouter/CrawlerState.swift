@@ -10,37 +10,22 @@ public actor CrawlerState {
     private var crawledPages: Set<Page> = []
     private var targetLinks: Set<TargetLink> = []
     private var lowPriorityStreak: Int = 0
-    private var maxConcurrentCrawls: Int
-    private var maxPages: Int
-    private var maxLowPriorityStreak: Int
-    private var maxCrawledPages: Int
     private var activeCrawls: Int = 0
-    private let depthDecayFactor: Double = 0.89
-    private let maxDepth: Int = 5
     private var terminationReason: TerminationReason?
+    private let options: Scouter.Options
     
-    public init(
-        maxConcurrentCrawls: Int = 5,
-        maxPages: Int = 50,
-        maxLowPriorityStreak: Int = 2,
-        maxCrawledPages: Int = 10
-    ) {
-        self.maxConcurrentCrawls = maxConcurrentCrawls
-        self.maxPages = maxPages
-        self.maxLowPriorityStreak = maxLowPriorityStreak
-        self.maxCrawledPages = maxCrawledPages
+    public init(options: Scouter.Options = .default()) {
+        self.options = options
     }
     
     public func markUrlAsCrawled(_ url: URL) -> Bool {
-        if crawledUrls.contains(url) {
-            return false
-        }
+        if crawledUrls.contains(url) { return false }
         crawledUrls.insert(url)
         return true
     }
     
     public func addPage(_ page: Page) {
-        guard crawledPages.count < maxPages else { return }
+        guard crawledPages.count < options.maxPages else { return }
         crawledPages.insert(page)
     }
     
@@ -51,14 +36,14 @@ public actor CrawlerState {
     }
     
     public func nextTarget() -> TargetLink? {
-        guard activeCrawls < maxConcurrentCrawls else { return nil }
+        guard activeCrawls < options.maxConcurrentCrawls else { return nil }
         let nextTarget = targetLinks.max { a, b in
             return a.score < b.score
         }
         if let target = nextTarget {
             targetLinks.remove(target)
-            activeCrawls += 1            
-            if crawledPages.count > 3 && target.score <= 3 {
+            activeCrawls += 1
+            if crawledPages.count > 3 && target.score <= options.minimumLinkScore {
                 lowPriorityStreak += 1
             } else {
                 lowPriorityStreak = 0
@@ -66,27 +51,25 @@ public actor CrawlerState {
         }
         return nextTarget
     }
-        
+    
     public func completeCrawl() {
-        if activeCrawls > 0 {
-            activeCrawls -= 1
-        }
+        if activeCrawls > 0 { activeCrawls -= 1 }
+    }
+    
+    public func getHighScoreTargetLinks() -> Set<TargetLink> {
+        targetLinks.filter { $0.score >= options.highScoreThreshold }
     }
     
     public func getCrawledPages() -> [Page] {
         Array(crawledPages)
     }
     
-    public func canAddPage() -> Bool {
-        crawledPages.count < maxPages
-    }
-    
     public func shouldTerminate() -> TerminationReason? {
-        if crawledPages.count >= maxCrawledPages {
+        if crawledPages.count >= options.maxCrawledPages {
             terminationReason = .maxPagesReached
             return terminationReason
         }
-        if lowPriorityStreak >= maxLowPriorityStreak {
+        if lowPriorityStreak >= options.maxLowPriorityStreak {
             terminationReason = .lowPriorityStreakExceeded
             return terminationReason
         }
@@ -101,6 +84,8 @@ public actor CrawlerState {
         let crawledCount = crawledUrls.count
         let remainingTargets = targetLinks.count
         let activeCount = activeCrawls
-        return "Crawled: \(crawledCount), Active: \(activeCount), Remaining: \(remainingTargets), MaxPages: \(maxPages)"
+        let highScoreCount = getHighScoreTargetLinks().count
+        
+        return "Crawled: \(crawledCount), Active: \(activeCount), High-Score: \(highScoreCount), Remaining: \(remainingTargets), MaxPages: \(options.maxPages)"
     }
 }

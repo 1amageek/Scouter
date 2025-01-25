@@ -13,21 +13,19 @@ public actor Crawler {
     private let state: CrawlerState
     private let evaluator: any Evaluating
     private let query: String
-    private let domainControl: DomainControl
+    private let options: Scouter.Options
     private let logger: Logger?
-    
     
     public init(
         query: String,
-        maxConcurrent: Int = 5,
+        options: Scouter.Options = .default(),
         evaluator: any Evaluating,
-        domainControl: DomainControl = DomainControl(),
         logger: Logger? = nil
     ) {
         self.query = query
-        self.state = CrawlerState(maxConcurrentCrawls: maxConcurrent, maxPages: 30)
+        self.options = options
+        self.state = CrawlerState(options: options)
         self.evaluator = evaluator
-        self.domainControl = domainControl
         self.logger = logger
     }
     
@@ -44,9 +42,8 @@ public actor Crawler {
         
         return targets.reduce(into: [URL: [String]]()) { result, entry in
             let (url, texts) = entry
-            
             guard let host = url.host?.lowercased() else { return }
-            guard !domainControl.exclude.contains(where: { domain in
+            guard !options.domainControl.exclude.contains(where: { domain in
                 host == domain || host.hasSuffix("." + domain)
             }) else { return }
             
@@ -60,6 +57,27 @@ public actor Crawler {
             if hasOnlyImages { return }
             
             result[url] = uniqueTexts
+        }
+    }
+    
+    private func evaluateAndAddTargets(_ targets: [URL: [String]], depth: Int) async throws {
+        
+        let highScoreTargetLinks = await state.getHighScoreTargetLinks()
+        if highScoreTargetLinks.count >= options.minHighScoreLinks {
+            logger?.info("Sufficient potential links found (\(highScoreTargetLinks.count)), skipping detailed evaluation")
+            return
+        }
+        
+        guard let evaluatedLinks: [LinkEvaluation] = try? await evaluator.evaluateTargets(targets: targets, query: query) else {
+            logger?.error("Failed to evaluate targets")
+            return
+        }
+        
+        for evaluation in evaluatedLinks {
+            let target = TargetLink(priority: evaluation.priority, depth: depth + 1, url: evaluation.url, texts: evaluation.texts)
+            if await state.addTarget(target) {
+                logger?.info("\(target.logDescription)")
+            }
         }
     }
     
@@ -85,54 +103,32 @@ public actor Crawler {
         }
         
         let links = try remark.extractLinks()
-        let filteredLinks = links.filter { link in
-            guard let url = URL(string: link.url),
-                  url.scheme?.lowercased() == "https",
-                  !link.text.isEmpty else {
-                return false
+            .filter { link in
+                guard let url = URL(string: link.url),
+                      url.scheme?.lowercased() == "https",
+                      !link.text.isEmpty else {
+                    return false
+                }
+                return true
             }
-            return true
-        }
+        
         var filteredLinksByUrl: [URL: [String]] = [:]
-        for link in filteredLinks {
-            guard let linkUrl = URL(string: link.url), !link.text.isEmpty,
+        for link in links {
+            guard let linkUrl = URL(string: link.url),
+                  !link.text.isEmpty,
                   let normalizedLinkUrl = normalizeUrl(linkUrl) else { continue }
             filteredLinksByUrl[normalizedLinkUrl, default: []].append(link.text)
         }
         filteredLinksByUrl = filterInvalidTargets(filteredLinksByUrl)
-        filteredLinksByUrl.forEach { url in
-            print(url.key)
-        }
-        guard let evaluatedLinks: [LinkEvaluation] = try? await evaluator.evaluateTargets(targets: filteredLinksByUrl, query: query) else {
-            logger?.error("Failed to evaluate targets for \(normalizedUrl)")
-            return
-        }
-        let targetLinks = evaluatedLinks.map {
-            TargetLink(priority: $0.priority, depth: depth + 1, url: $0.url, texts: $0.texts)
-        }
-        for target in targetLinks {
-            if await state.addTarget(target) {
-                logger?
-                    .info(
-                        "[\(target.priority.rawValue)-\(target.depth)(\(target.score))]: \(target.url) | \(target.texts.joined(separator: ", "))"
-                    )
-            }
-        }
         
-        guard let pagePriority = try? await evaluator.evaluateContent(
-            content: remark.plainText,
-            query: query
-        ) else {
+        try await evaluateAndAddTargets(filteredLinksByUrl, depth: depth)
+        
+        guard let pagePriority = try? await evaluator.evaluateContent(content: remark.plainText, query: query) else {
             logger?.error("Failed to evaluate content for \(normalizedUrl)")
             return
         }
         
-        let page = Page(
-            url: normalizedUrl,
-            remark: remark,
-            priority: pagePriority,
-            crawledAt: Date()
-        )
+        let page = Page(url: normalizedUrl, remark: remark, priority: pagePriority, crawledAt: Date())
         await state.addPage(page)
         
         let progress = await state.getProgress()
@@ -142,10 +138,7 @@ public actor Crawler {
             while let nextTarget = await state.nextTarget() {
                 group.addTask {
                     do {
-                        try await self.crawl(
-                            startUrl: nextTarget.url,
-                            depth: nextTarget.depth
-                        )
+                        try await self.crawl(startUrl: nextTarget.url, depth: nextTarget.depth)
                     } catch {
                         self.logger?.error("Error crawling \(nextTarget.url): \(error.localizedDescription)")
                     }
