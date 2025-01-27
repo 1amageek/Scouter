@@ -41,9 +41,10 @@ public actor OpenAISummarizer: Summarizing {
                                 "sourceURLs": .array(
                                     description: "URLs ordered by relevance",
                                     items: .string(description: "Source URL")
-                                )
+                                ),
+                                "fullExplanation": .string(description: "A complete and detailed explanation that covers everything in depth")
                             ],
-                            required: ["overview", "keyPoints", "sourceURLs"]
+                            required: ["overview", "keyPoints", "sourceURLs", "fullExplanation"]
                         )
                     )
                 )
@@ -57,12 +58,7 @@ public actor OpenAISummarizer: Summarizing {
         
         let decoded = try JSONDecoder().decode(SummaryResponse.self, from: jsonData)
         
-        return Summary(
-            query: query,
-            overview: decoded.overview,
-            keyPoints: decoded.keyPoints,
-            sourceURLs: decoded.sourceURLs.compactMap(URL.init)
-        )
+        return createSummary(from: decoded, query: query)
     }
 }
 
@@ -70,4 +66,17 @@ private struct SummaryResponse: Codable {
     let overview: String
     let keyPoints: [String]
     let sourceURLs: [String]
+    let fullExplanation: String
+}
+
+extension OpenAISummarizer {
+    private func createSummary(from response: SummaryResponse, query: String) -> Summary {
+        Summary(
+            query: query,
+            overview: response.overview,
+            keyPoints: response.keyPoints,
+            sourceURLs: response.sourceURLs.compactMap(URL.init),
+            fullExplanation: response.fullExplanation
+        )
+    }
 }

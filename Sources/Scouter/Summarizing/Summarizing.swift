@@ -16,6 +16,7 @@ public struct Summary: Sendable, Codable {
     public let overview: String
     public let keyPoints: [String]
     public let sourceURLs: [URL]
+    public let fullExplanation: String
     public let generatedAt: Date
     
     public init(
@@ -23,12 +24,14 @@ public struct Summary: Sendable, Codable {
         overview: String,
         keyPoints: [String],
         sourceURLs: [URL],
+        fullExplanation: String,
         generatedAt: Date = Date()
     ) {
         self.query = query
         self.overview = overview
         self.keyPoints = keyPoints
         self.sourceURLs = sourceURLs
+        self.fullExplanation = fullExplanation
         self.generatedAt = generatedAt
     }
 }
@@ -46,7 +49,8 @@ extension Summarizing {
         {
           "overview": "A comprehensive technical explanation",
           "keyPoints": ["Detailed point 1", "Detailed point 2", ...],
-          "sourceURLs": ["url1", "url2", ...]
+          "sourceURLs": ["url1", "url2", ...],
+          "fullExplanation": "A complete and detailed explanation that covers everything in depth"
         }
         
         Your analysis should:
@@ -55,6 +59,17 @@ extension Summarizing {
         3. Cover all relevant specifications and methodologies
         4. Explain complex concepts thoroughly
         5. Reference concrete examples and evidence
+        6. Create a comprehensive technical document that covers all aspects in detail
+        
+        The fullExplanation should be an extensive, well-structured document that:
+        - Provides complete theoretical background
+        - Explains all technical concepts in depth
+        - Details implementation approaches and best practices
+        - Includes architectural considerations
+        - Covers performance implications
+        - Discusses security aspects
+        - Provides troubleshooting guidance
+        - References real-world examples
         
         Ensure each component maintains valid JSON string format while being comprehensive.
         """
@@ -64,7 +79,10 @@ extension Summarizing {
         """
         Primary Research Query: \(query)
         
-        Analyze these source materials thoroughly (ordered by priority 5=highest to 1=lowest):
+        Important: Analyze and respond in the same language as the query above.
+        Generate all content including technical terms, examples, and explanations in the query's language.
+
+        Analyze these source materials thoroughly (ordered by priority 7=highest to 1=lowest):
         
         \(pages.map { page in
             """
@@ -87,7 +105,8 @@ extension Summarizing {
             "url1",
             "url2",
             ... (ordered by relevance)
-          ]
+          ],
+          "fullExplanation": "An exhaustive full explanation covering all aspects in detail"
         }
         
         For the overview:
@@ -102,6 +121,21 @@ extension Summarizing {
         - Provide specific examples and evidence
         - Cover best practices and considerations
         - Ensure it's formatted as a valid JSON string
+        
+        For the technical document:
+        - Write a comprehensive guide that covers all aspects in detail
+        - Include complete theoretical background and principles
+        - Explain all technical concepts with thorough examples
+        - Detail implementation approaches and best practices
+        - Cover architectural patterns and considerations
+        - Document performance characteristics and optimization strategies
+        - Include security considerations and threat mitigations
+        - Provide troubleshooting guides and debug procedures
+        - Discuss scalability and maintenance aspects
+        - Reference real-world examples and use cases
+        - Address common challenges and solutions
+        - Include deployment and operational guidelines
+        - Consider future extensibility and evolution
         
         Make the content comprehensive and technically precise while maintaining valid JSON format.
         """
