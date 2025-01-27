@@ -67,17 +67,21 @@ public actor Crawler {
             logger?.info("Sufficient potential links found (\(highScoreTargetLinks.count)), skipping detailed evaluation")
             return
         }
-        
-        guard let evaluatedLinks: [LinkEvaluation] = try? await evaluator.evaluateTargets(targets: targets, query: query) else {
-            logger?.error("Failed to evaluate targets")
-            return
-        }
-        
-        for evaluation in evaluatedLinks {
-            let target = TargetLink(priority: evaluation.priority, depth: depth + 1, url: evaluation.url, texts: evaluation.texts)
-            if await state.addTarget(target) {
-                logger?.info("\(target.logDescription)")
+        do {
+            let evaluatedLinks: [LinkEvaluation] = try await evaluator.evaluateTargets(targets: targets, query: query)
+            for evaluation in evaluatedLinks {
+                let target = TargetLink(priority: evaluation.priority, depth: depth + 1, url: evaluation.url, texts: evaluation.texts)
+                if target.score > 1 {
+                    if await state.addTarget(target) {
+                        logger?.info("\(target.logDescription)")
+                    }
+                } else {
+                    print("Ignored url: ", target.url.absoluteString)
+                }
             }
+        } catch {
+            print(error)
+            logger?.error("Failed to evaluate targets")
         }
     }
     

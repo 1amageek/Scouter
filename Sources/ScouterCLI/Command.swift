@@ -27,13 +27,11 @@ struct ScouterCommand: AsyncParsableCommand {
             prompt: prompt,
             logger: Logger(label: "Scouter")
         )
+        let summarizer = OpenAISummarizer()
+        let summary = try await summarizer.summarize(pages: result.pages, query: prompt)
         print(result.terminationReason)
         print("==========")
-        result.pages.forEach { page in
-            print("== [\(page.priority.rawValue)] ==")
-            print(page.remark.plainText)
-            print("\n\n-------")
-        }
+        print(summary)
     }
 }
 

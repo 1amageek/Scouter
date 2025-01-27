@@ -28,7 +28,7 @@ public struct Scouter: Sendable {
         let crawler = Crawler(
             query: prompt,
             options: options,
-            evaluator: OllamaEvaluator(model: options.model),
+            evaluator: OpenAIEvaluator(),
             logger: logger
         )
         
@@ -80,7 +80,7 @@ public struct Scouter: Sendable {
     }
     
     private static func isExcludedDomain(_ url: URL) -> Bool {
-        let excludedDomains = ["google.com", "google.co.jp", "facebook.com", "instagram.com", "youtube.com", "pinterest.com", "twitter.com", "x.com", "line.me", "weathernews.com", "weather.cnn.co.jp", "weathernews.jp"]
+        let excludedDomains = ["google.com", "google.co.jp", "facebook.com", "instagram.com", "youtube.com", "pinterest.com", "twitter.com", "x.com", "line.me", "weathernews.com", "weather.cnn.co.jp", "weathernews.jp", "veltra.com"]
         guard let host = url.host?.lowercased() else { return true }
         return excludedDomains.contains { domain in
             host == domain || host.hasSuffix("." + domain)
@@ -137,7 +137,7 @@ extension Scouter {
             model: String = "llama3.2:latest",
             maxDepth: Int = 5,
             maxPages: Int = 45,
-            maxCrawledPages: Int = 8,
+            maxCrawledPages: Int = 10,
             maxLowPriorityStreak: Int = 2,
             minRelevantPages: Int = 8,
             maxRetries: Int = 3,
