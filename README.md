@@ -1,13 +1,17 @@
 # Scouter
 
-Scouter is a Swift library that performs web content searching and link extraction based on relevance scoring. It is designed to analyze web pages, extract relevant links, and score them based on a specified similarity threshold. Scouter uses `SwiftSoup` for HTML parsing, `OllamaKit` for AI interactions, and `Accelerate` for efficient similarity calculations.
+Scouter is a powerful web crawling and content analysis framework for Swift that uses AI to intelligently navigate and evaluate web content. It combines advanced web crawling capabilities with AI-powered content evaluation to help you find and analyze relevant information across the web.
 
 ## Features
 
-- **Recursive Web Content Search**: Starts searches from a given URL and explores relevant links recursively based on a search prompt.
-- **Link Extraction**: Retrieves links from HTML content and scores them for relevance to a specified prompt.
-- **Similarity Scoring**: Uses cosine similarity scoring for extracted links to filter out irrelevant content.
-- **Configurable Options**: Allows customization of maximum tasks and similarity threshold for more focused searches.
+- 🔍 Intelligent web crawling with AI-guided navigation
+- 🤖 AI-powered content evaluation and prioritization
+- 🌐 Smart domain filtering and control
+- 📊 Concurrent crawling with adaptive depth management
+- 📝 Content summarization with multiple AI model support
+- 🔗 Advanced URL normalization and filtering
+- 📈 Priority-based crawling strategy
+- 🛡 Built-in protection against common crawling pitfalls
 
 ## Requirements
 
@@ -30,29 +34,170 @@ dependencies: [
 ]
 ```
 
-## Usage
+## Basic Usage
 
-### Performing a Search
-Use the search method to initiate a content search on a specific URL with a search prompt. This method returns relevant content if found, or nil if no relevant content is detected.
+Here's a simple example of how to use Scouter:
 
 ```swift
-let url = URL(string: "https://example.com")!
-let prompt = "Find information about AI in Swift"
+import Scouter
 
-Task {
-    do {
-        let result = try await Scouter.search(
-            model: "YourModelIdentifier",
-            url: url,
-            prompt: prompt
-        )
-        if let content = result {
-            print("Found content: \(content)")
-        } else {
-            print("No relevant content found.")
-        }
-    } catch {
-        print("Search failed with error: \(error)")
+// Create a search instance with default options
+let result = try await Scouter.search(
+    prompt: "Swift concurrency best practices",
+    logger: Logger(label: "Scouter")
+)
+
+// Access the crawled pages
+for page in result.pages {
+    print("URL: \(page.url)")
+    print("Priority: \(page.priority)")
+    print("Content: \(page.remark.plainText)")
+}
+
+// Generate a summary using OpenAI
+let summarizer = OpenAISummarizer()
+let summary = try await summarizer.summarize(
+    pages: result.pages, 
+    query: "Swift concurrency best practices"
+)
+```
+
+## Advanced Configuration
+
+Scouter provides extensive configuration options through the `Options` struct:
+
+```swift
+let options = Scouter.Options(
+    model: "llama3.2:latest",         // AI model to use
+    maxDepth: 5,                      // Maximum crawling depth
+    maxPages: 45,                     // Maximum pages to crawl
+    maxCrawledPages: 10,              // Maximum pages to store
+    maxConcurrentCrawls: 5,           // Maximum concurrent crawls
+    minHighScoreLinks: 10,            // Minimum high-scoring links
+    highScoreThreshold: 3.1,          // Threshold for high-score links
+    domainControl: DomainControl(     // Domain filtering
+        exclude: ["facebook.com", "twitter.com"]
+    )
+)
+
+let result = try await Scouter.search(
+    prompt: "Your search query",
+    options: options,
+    logger: Logger(label: "Scouter")
+)
+```
+
+## Key Components
+
+### Crawler
+
+The `Crawler` class manages the web crawling process:
+- Handles concurrent crawling with depth management
+- Normalizes and filters URLs
+- Evaluates content relevance using AI
+- Manages crawling state and termination conditions
+
+### Evaluators
+
+Scouter supports multiple AI evaluators:
+
+1. `OllamaEvaluator`: Uses Ollama models for content evaluation
+```swift
+let evaluator = OllamaEvaluator(model: "llama3.2:latest")
+```
+
+2. `OpenAIEvaluator`: Uses OpenAI models for content evaluation
+```swift
+let evaluator = OpenAIEvaluator(model: "gpt-4o-mini")
+```
+
+### Summarizers
+
+Content summarization is supported through:
+
+1. `OllamaSummarizer`: Generates summaries using Ollama models
+```swift
+let summarizer = OllamaSummarizer(model: "llama3.2:latest")
+```
+
+2. `OpenAISummarizer`: Generates summaries using OpenAI models
+```swift
+let summarizer = OpenAISummarizer(model: "gpt-4o-mini")
+```
+
+## Domain Control
+
+You can control which domains are crawled using the `DomainControl` struct:
+
+```swift
+let domainControl = DomainControl(
+    exclude: [
+        "facebook.com",
+        "instagram.com",
+        "youtube.com",
+        "pinterest.com",
+        "twitter.com",
+        "x.com"
+    ]
+)
+```
+
+## Prioritization System
+
+Scouter uses a sophisticated prioritization system:
+
+- `Priority` enum with values from `.low` (1) to `.critical` (5)
+- Score calculation based on priority and depth
+- Adaptive crawling based on content relevance
+- Low priority streak detection to prevent wasteful crawling
+
+## CLI Tool
+
+Scouter includes a command-line interface:
+
+```bash
+scouter "Your search query"
+```
+
+This will:
+1. Perform the search
+2. Crawl relevant pages
+3. Generate a summary
+4. Display results in the terminal
+
+## Error Handling
+
+Scouter provides structured error handling:
+
+```swift
+do {
+    let result = try await Scouter.search(prompt: "Your query")
+} catch {
+    switch error {
+    case let error as Scouter.OptionsError:
+        print("Options error: \(error)")
+    default:
+        print("Unexpected error: \(error)")
     }
 }
 ```
+
+## Logging
+
+Scouter uses the `Logging` framework for structured logging:
+
+```swift
+let logger = Logger(label: "Scouter")
+let result = try await Scouter.search(
+    prompt: "Your query",
+    logger: logger
+)
+```
+
+## License
+
+Scouter is available under the MIT license.
+
+## Author
+
+Created by Norikazu Muramoto ([@1amageek](https://github.com/1amageek))
