@@ -15,37 +15,39 @@ import Logging
 struct ScouterCommand: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "scouter",
-        abstract: "Convert HTML content from URLs to Markdown format",
+        abstract: "Search and analyze web content",
         version: "1.0.0"
     )
     
     @Argument(help: "Search query prompt")
     var prompt: String
     
+    @Option(name: .long, help: "Evaluator provider (ollama/openai)")
+    var evaluatorProvider: String = "ollama"
+    
+    @Option(name: .long, help: "Evaluator model name")
+    var evaluatorModel: String = "llama3.2:latest"
+    
+    @Option(name: .long, help: "Summarizer provider (ollama/openai)")
+    var summarizerProvider: String = "ollama"
+    
+    @Option(name: .long, help: "Summarizer model name")
+    var summarizerModel: String = "llama3.2:latest"
+    
     mutating func run() async throws {
-        let result = try await Scouter.search(
-            prompt: prompt,
-            logger: Logger(label: "Scouter")
+        let logger = Logger(label: "Scouter")
+        
+        let options = Scouter.Options(
+            evaluatorModel: .parse(evaluatorProvider, evaluatorModel),
+            summarizerModel: .parse(summarizerProvider, summarizerModel)
         )
-        let summarizer = OpenAISummarizer()
-        let summary = try await summarizer.summarize(pages: result.pages, query: prompt)
-        print(result.terminationReason)
-        print(result)
-        print("==========")
+        
+        let result = try await Scouter.search(prompt: prompt, options: options, logger: logger)
+        let summary = try await Scouter.summarize(result: result, options: options, logger: logger)
+        
+        print("\n=== Summary ===")
         print(summary)
-    }
-}
-
-extension ScouterCommand {
-    struct ValidationError: Error, LocalizedError {
-        let message: String
-        
-        init(_ message: String) {
-            self.message = message
-        }
-        
-        var errorDescription: String? {
-            return message
-        }
+        print("\n=== Search Results ===")
+        print(result)
     }
 }
