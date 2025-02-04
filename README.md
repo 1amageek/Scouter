@@ -19,8 +19,8 @@ Scouter is a powerful web crawling and content analysis framework for Swift that
 - **iOS 18.0+**, **macOS 15.0+**
 - Dependencies:
   - `SwiftSoup` for HTML parsing
-  - `OllamaKit` for AI model interaction
-  - `Logging` for structured log management
+  - `OllamaKit` for Ollama model interaction
+  - `LLMChatOpenAI` for OpenAI model interaction
 
 ## Installation
 
@@ -41,157 +41,126 @@ Here's a simple example of how to use Scouter:
 ```swift
 import Scouter
 
-// Create a search instance with default options
-let result = try await Scouter.search(
-    prompt: "Swift concurrency best practices",
-    logger: Logger(label: "Scouter")
-)
+// Create a search instance with default options (using Ollama)
+let result = try await Scouter.search(prompt: "Swift concurrency best practices")
 
-// Access the crawled pages
-for page in result.pages {
-    print("URL: \(page.url)")
-    print("Priority: \(page.priority)")
-    print("Content: \(page.remark.plainText)")
-}
-
-// Generate a summary using OpenAI
-let summarizer = OpenAISummarizer()
-let summary = try await summarizer.summarize(
-    pages: result.pages, 
-    query: "Swift concurrency best practices"
-)
+// Generate summary (automatically done in the search process)
+let summary = try await Scouter.summarize(result: result)
 ```
 
-## Advanced Configuration
+## Using OpenAI Models
 
-Scouter provides extensive configuration options through the `Options` struct:
+To use OpenAI models, you need to set up your API key first:
+
+1. Set OPENAI_API_KEY in your environment:
+   - In terminal: `export OPENAI_API_KEY='your-api-key'`
+   - Or in Xcode: Add to scheme environment variables
+   - Or in macOS: Add to system environment variables
+
+Then you can use OpenAI models:
 
 ```swift
 let options = Scouter.Options(
-    model: "llama3.2:latest",         // AI model to use
-    maxDepth: 5,                      // Maximum crawling depth
-    maxPages: 45,                     // Maximum pages to crawl
-    maxCrawledPages: 10,              // Maximum pages to store
-    maxConcurrentCrawls: 5,           // Maximum concurrent crawls
-    minHighScoreLinks: 10,            // Minimum high-scoring links
-    highScoreThreshold: 3.1,          // Threshold for high-score links
-    domainControl: DomainControl(     // Domain filtering
-        exclude: ["facebook.com", "twitter.com"]
-    )
+    evaluatorModel: .openAI("gpt-4o-mini"),
+    summarizerModel: .openAI("gpt-4o-mini")
 )
 
 let result = try await Scouter.search(
     prompt: "Your search query",
-    options: options,
-    logger: Logger(label: "Scouter")
+    options: options
 )
 ```
 
-## Key Components
+## Model Configuration
 
-### Crawler
-
-The `Crawler` class manages the web crawling process:
-- Handles concurrent crawling with depth management
-- Normalizes and filters URLs
-- Evaluates content relevance using AI
-- Manages crawling state and termination conditions
-
-### Evaluators
-
-Scouter supports multiple AI evaluators:
-
-1. `OllamaEvaluator`: Uses Ollama models for content evaluation
-```swift
-let evaluator = OllamaEvaluator(model: "llama3.2:latest")
-```
-
-2. `OpenAIEvaluator`: Uses OpenAI models for content evaluation
-```swift
-let evaluator = OpenAIEvaluator(model: "gpt-4o-mini")
-```
-
-### Summarizers
-
-Content summarization is supported through:
-
-1. `OllamaSummarizer`: Generates summaries using Ollama models
-```swift
-let summarizer = OllamaSummarizer(model: "llama3.2:latest")
-```
-
-2. `OpenAISummarizer`: Generates summaries using OpenAI models
-```swift
-let summarizer = OpenAISummarizer(model: "gpt-4o-mini")
-```
-
-## Domain Control
-
-You can control which domains are crawled using the `DomainControl` struct:
+Scouter supports both Ollama and OpenAI models:
 
 ```swift
-let domainControl = DomainControl(
-    exclude: [
-        "facebook.com",
-        "instagram.com",
-        "youtube.com",
-        "pinterest.com",
-        "twitter.com",
-        "x.com"
-    ]
+// Using Ollama models (default)
+let ollamaOptions = Scouter.Options(
+    evaluatorModel: .ollama("llama3.2:latest"),
+    summarizerModel: .ollama("llama3.2:latest")
+)
+
+// Using OpenAI models
+let openAIOptions = Scouter.Options(
+    evaluatorModel: .openAI("gpt-4o-mini"),
+    summarizerModel: .openAI("gpt-4o-mini")
+)
+
+// Mix and match models
+let mixedOptions = Scouter.Options(
+    evaluatorModel: .ollama("llama3.2:latest"),
+    summarizerModel: .openAI("gpt-4o-mini")
 )
 ```
-
-## Prioritization System
-
-Scouter uses a sophisticated prioritization system:
-
-- `Priority` enum with values from `.low` (1) to `.critical` (5)
-- Score calculation based on priority and depth
-- Adaptive crawling based on content relevance
-- Low priority streak detection to prevent wasteful crawling
 
 ## CLI Tool
 
 Scouter includes a command-line interface:
 
 ```bash
+# Using default Ollama models
 scouter "Your search query"
+
+# Using OpenAI models
+scouter "Your search query" \
+  --evaluator-provider openai --evaluator-model "gpt-4o-mini" \
+  --summarizer-provider openai --summarizer-model "gpt-4o-mini"
+
+# Mix and match models
+scouter "Your search query" \
+  --evaluator-provider ollama --evaluator-model "llama3.2:latest" \
+  --summarizer-provider openai --summarizer-model "gpt-4o-mini"
 ```
 
-This will:
-1. Perform the search
-2. Crawl relevant pages
-3. Generate a summary
-4. Display results in the terminal
+## Domain Control
+
+You can control which domains are crawled:
+
+```swift
+let options = Scouter.Options(
+    evaluatorModel: .ollama("llama3.2:latest"),
+    summarizerModel: .ollama("llama3.2:latest"),
+    domainControl: DomainControl(
+        exclude: [
+            "facebook.com",
+            "instagram.com",
+            "youtube.com",
+            "pinterest.com",
+            "twitter.com",
+            "x.com"
+        ]
+    )
+)
+```
+
+## Advanced Configuration
+
+Scouter provides extensive configuration options:
+
+```swift
+let options = Scouter.Options(
+    evaluatorModel: .ollama("llama3.2:latest"),
+    summarizerModel: .ollama("llama3.2:latest"),
+    maxDepth: 5,                      // Maximum crawling depth
+    maxPages: 45,                     // Maximum pages to crawl
+    maxCrawledPages: 10,              // Maximum pages to store
+    maxConcurrentCrawls: 5,           // Maximum concurrent crawls
+    minHighScoreLinks: 10,            // Minimum high-scoring links
+    highScoreThreshold: 3.1           // Threshold for high-score links
+)
+```
 
 ## Error Handling
-
-Scouter provides structured error handling:
 
 ```swift
 do {
     let result = try await Scouter.search(prompt: "Your query")
+    let summary = try await Scouter.summarize(result: result)
 } catch {
-    switch error {
-    case let error as Scouter.OptionsError:
-        print("Options error: \(error)")
-    default:
-        print("Unexpected error: \(error)")
-    }
+    print("Error: \(error)")
 }
-```
-
-## Logging
-
-Scouter uses the `Logging` framework for structured logging:
-
-```swift
-let logger = Logger(label: "Scouter")
-let result = try await Scouter.search(
-    prompt: "Your query",
-    logger: logger
-)
 ```
 
 ## License
