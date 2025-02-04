@@ -12,40 +12,6 @@ public enum TerminationReason: String, Sendable {
 }
 
 public struct Scouter: Sendable {
-    public static func search(
-        prompt: String,
-        options: Options = .default(),
-        logger: Logger? = nil
-    ) async throws -> Result {
-        print("Prompt: \(prompt)")
-        
-        let startTime = Date()
-        let encodedQuery = try encodeGoogleSearchQuery(prompt)
-        let searchUrl = URL(string: "https://www.google.com/search?q=\(encodedQuery)")!
-        
-        let searchResults = try await fetchGoogleSearchResults(searchUrl, logger: logger)
-        
-        let crawler = Crawler(
-            query: prompt,
-            options: options,
-            evaluator: OpenAIEvaluator(),
-            logger: logger
-        )
-        
-        for url in searchResults {
-            try await crawler.crawl(startUrl: url)
-        }
-        
-        let (pages, terminationReason) = await crawler.getCrawlerState()
-        let duration = Date().timeIntervalSince(startTime)
-        
-        return Result(
-            query: prompt,
-            pages: pages,
-            searchDuration: duration,
-            terminationReason: terminationReason
-        )
-    }
     
     private static func fetchGoogleSearchResults(
         _ url: URL,
@@ -117,7 +83,8 @@ extension Scouter {
     }
     
     public struct Options: Sendable {
-        public let model: String
+        public let evaluatorModel: Model
+        public let summarizerModel: Model
         public let maxDepth: Int
         public let maxPages: Int
         public let maxCrawledPages: Int
@@ -134,7 +101,8 @@ extension Scouter {
         public let domainControl: DomainControl
         
         public init(
-            model: String = "llama3.2:latest",
+            evaluatorModel: Model = .defaultModel,
+            summarizerModel: Model = .defaultModel,
             maxDepth: Int = 5,
             maxPages: Int = 45,
             maxCrawledPages: Int = 10,
@@ -150,7 +118,8 @@ extension Scouter {
             timeout: TimeInterval = 30,
             domainControl: DomainControl = .init()
         ) {
-            self.model = model
+            self.evaluatorModel = evaluatorModel
+            self.summarizerModel = summarizerModel
             self.maxDepth = maxDepth
             self.maxPages = maxPages
             self.maxCrawledPages = maxCrawledPages
@@ -181,6 +150,60 @@ extension Scouter {
                 return "minimumLinkScore (\(min)) must be lower than relevancyThreshold (\(relevancy))"
             }
         }
+    }
+}
+
+extension Scouter {
+    
+    public static func search(
+        prompt: String,
+        options: Options = .default(),
+        logger: Logger? = nil
+    ) async throws -> Result {
+        print("Prompt: \(prompt)")
+        
+        let startTime = Date()
+        let encodedQuery = try encodeGoogleSearchQuery(prompt)
+        let searchUrl = URL(string: "https://www.google.com/search?q=\(encodedQuery)")!
+        
+        let searchResults = try await fetchGoogleSearchResults(searchUrl, logger: logger)
+        
+        let evaluator = options.evaluatorModel.createEvaluator()
+        
+        let crawler = Crawler(
+            query: prompt,
+            options: options,
+            evaluator: evaluator,
+            logger: logger
+        )
+        
+        for url in searchResults {
+            try await crawler.crawl(startUrl: url)
+        }
+        
+        let (pages, terminationReason) = await crawler.getCrawlerState()
+        let duration = Date().timeIntervalSince(startTime)
+        
+        return Result(
+            query: prompt,
+            pages: pages,
+            searchDuration: duration,
+            terminationReason: terminationReason
+        )
+    }
+    
+    public static func summarize(
+        result: Result,
+        options: Options,
+        logger: Logger? = nil
+    ) async throws -> Summary {
+        logger?.info("Starting summarization")
+        
+        let summarizer = options.summarizerModel.createSummarizer()
+        let summary = try await summarizer.summarize(pages: result.pages, query: result.query)
+        
+        logger?.info("Completed summarization")
+        return summary
     }
 }
 
