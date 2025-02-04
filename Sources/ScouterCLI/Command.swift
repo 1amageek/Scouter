@@ -30,6 +30,7 @@ struct ScouterCommand: AsyncParsableCommand {
         let summarizer = OpenAISummarizer()
         let summary = try await summarizer.summarize(pages: result.pages, query: prompt)
         print(result.terminationReason)
+        print(result)
         print("==========")
         print(summary)
     }

@@ -184,3 +184,17 @@ extension Scouter {
     }
 }
 
+extension Scouter.Result: CustomStringConvertible {
+    public var description: String {
+        let lines = [
+            "Search Summary",
+            "Query: \(query)",
+            "Duration: \(String(format: "%.2f", searchDuration))s",
+            "Pages Found: \(pages.count)",
+            terminationReason.rawValue,
+            "\nResults:",
+            pages.map { "- [\($0.priority.rawValue)] \($0.url.absoluteString)" }.joined(separator: "\n")
+        ]
+        return lines.joined(separator: "\n")
+    }
+}

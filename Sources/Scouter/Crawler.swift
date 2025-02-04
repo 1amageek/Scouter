@@ -71,12 +71,12 @@ public actor Crawler {
             let evaluatedLinks: [LinkEvaluation] = try await evaluator.evaluateTargets(targets: targets, query: query)
             for evaluation in evaluatedLinks {
                 let target = TargetLink(priority: evaluation.priority, depth: depth + 1, url: evaluation.url, texts: evaluation.texts)
-                if target.score > 1 {
+                if target.score > 1.2 {
                     if await state.addTarget(target) {
                         logger?.info("\(target.logDescription)")
                     }
                 } else {
-                    print("Ignored url: ", target.url.absoluteString)
+                    print("🚧 ", target.logDescription)
                 }
             }
         } catch {

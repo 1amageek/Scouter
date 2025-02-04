@@ -36,6 +36,21 @@ public struct Summary: Sendable, Codable {
     }
 }
 
+extension Summary: CustomStringConvertible {
+    public var description: String {
+        """
+        [Overview]
+        \(overview)
+        
+        [Key Points]
+        \(keyPoints.map { "• \($0)" }.joined(separator: "\n"))
+        
+        [Details]
+        \(fullExplanation)
+        """
+    }
+}
+
 enum SummarizerError: Error {
     case invalidResponse
     case noContent
